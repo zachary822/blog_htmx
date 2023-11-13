@@ -58,6 +58,7 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: static-files
+          path: dist
       - name: Upload to S3
         run: |
           aws s3 sync dist s3://thoughtbank-blog/ --delete
