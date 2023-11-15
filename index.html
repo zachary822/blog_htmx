@@ -4,12 +4,13 @@
     <meta charset="UTF-8"/>
     <link rel="icon" type="image/x-icon" href="/favicon.ico"/>
     <link rel="stylesheet" type="text/css" href="/styles.css"/>
+    <link rel="stylesheet" type="text/css" href="/highlight.css"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>ThoughtBank Blog</title>
 </head>
 <body>
-<main class="container">
-    Riveting Content!
+<main class="container" hx-get="/api/posts" hx-trigger="load">
+    Thing!
 </main>
 <script type="module" src="/main.js"></script>
 </body>
