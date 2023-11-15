@@ -10,6 +10,7 @@ import Data.Functor ((<&>))
 import Data.List (intersperse)
 import Data.Maybe
 import Data.Pool
+import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Database.MongoDB
@@ -70,6 +71,8 @@ main = do
   debug <- isDebug
 
   dburi <- getEnv "MONGODB_URI"
+  webHost <- fromMaybe "localhost" <$> lookupEnv "HOST"
+  webPort <- fromMaybe "3000" <$> lookupEnv "PORT"
 
   let (dbhost, uname, passwd) = getDbInfo dburi
 
@@ -81,7 +84,7 @@ main = do
         defaultOptions
           { verbose = 1
           , settings =
-              setHost "localhost" . setPort 3000 $
+              setHost (fromString webHost) . setPort (read webPort) $
                 settings defaultOptions
           }
 
