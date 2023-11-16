@@ -67,16 +67,15 @@ mdToHtml s =
     readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks]} s
       >>= writeHtml5 def
 
-data SocketConfig = TCPSocketConfig | UnixSocketConfig String
-
-scottySocket' :: SocketConfig -> Options -> ScottyM () -> IO ()
-scottySocket' sconf opts app = case sconf of
-  TCPSocketConfig -> do
+scottySocket' :: Maybe String -> Options -> ScottyM () -> IO ()
+scottySocket' mpath opts app = case mpath of
+  Nothing -> do
     scottyOpts opts app
-  UnixSocketConfig p -> do
+  Just p -> do
     let cleanup sock = do
           S.close sock
           removeFile p
+
     bracketOnError (socket AF_UNIX Stream 0) cleanup $ \sock -> do
       bind sock $ SockAddrUnix p
       listen sock maxListenQueue
@@ -101,14 +100,12 @@ main = do
 
   let opts =
         defaultOptions
-          { verbose = 1
-          , settings =
+          { settings =
               setHost (fromString webHost) . setPort (read webPort) $
                 settings defaultOptions
           }
-      sconf = maybe TCPSocketConfig UnixSocketConfig socketPath
 
-  scottySocket' sconf opts $ do
+  scottySocket' socketPath opts $ do
     middleware $
       if debug
         then logStdoutDev
