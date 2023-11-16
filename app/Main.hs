@@ -4,6 +4,7 @@
 module Main where
 
 import Configuration.Dotenv
+import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Functor ((<&>))
@@ -15,9 +16,11 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Database.MongoDB
 import Database.MongoDB qualified as M
+import Network.Socket as S
 import Network.URI
 import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.RequestLogger
+import System.Directory
 import System.Environment
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 (Html)
@@ -64,6 +67,21 @@ mdToHtml s =
     readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks]} s
       >>= writeHtml5 def
 
+data SocketConfig = TCPSocketConfig | UnixSocketConfig String
+
+scottySocket' :: SocketConfig -> Options -> ScottyM () -> IO ()
+scottySocket' sconf opts app = case sconf of
+  TCPSocketConfig -> do
+    scottyOpts opts app
+  UnixSocketConfig p -> do
+    let cleanup sock = do
+          S.close sock
+          removeFile p
+    bracketOnError (socket AF_UNIX Stream 0) cleanup $ \sock -> do
+      bind sock $ SockAddrUnix p
+      listen sock maxListenQueue
+      scottySocket opts sock app
+
 main :: IO ()
 main = do
   onMissingFile (loadFile defaultConfig) mempty
@@ -73,12 +91,13 @@ main = do
   dburi <- getEnv "MONGODB_URI"
   webHost <- fromMaybe "localhost" <$> lookupEnv "HOST"
   webPort <- fromMaybe "3000" <$> lookupEnv "PORT"
+  socketPath <- lookupEnv "SOCKET"
 
   let (dbhost, uname, passwd) = getDbInfo dburi
 
   rs <- openReplicaSetSRV' dbhost
 
-  pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) close 10 10)
+  pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 10)
 
   let opts =
         defaultOptions
@@ -87,8 +106,9 @@ main = do
               setHost (fromString webHost) . setPort (read webPort) $
                 settings defaultOptions
           }
+      sconf = maybe TCPSocketConfig UnixSocketConfig socketPath
 
-  scottyOpts opts $ do
+  scottySocket' sconf opts $ do
     middleware $
       if debug
         then logStdoutDev
