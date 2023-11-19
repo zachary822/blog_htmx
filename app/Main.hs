@@ -1,5 +1,8 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Main where
 
@@ -16,13 +19,14 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Database.MongoDB
 import Database.MongoDB qualified as M
+import GHC.Generics
+import Lib.Blaze
 import Network.Socket as S
 import Network.URI
 import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.RequestLogger
 import System.Directory
 import System.Environment
-import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
@@ -62,24 +66,63 @@ getPipe rs uname passwd = do
   return pipe
 
 mdToHtml :: Text -> IO Html
-mdToHtml s =
-  runIOorExplode $
-    readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks]} s
-      >>= writeHtml5 def
+mdToHtml =
+  runIOorExplode
+    . ( writeHtml5 def
+          <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks]}
+      )
 
 scottySocket' :: Maybe String -> Options -> ScottyM () -> IO ()
 scottySocket' mpath opts app = case mpath of
   Nothing -> do
     scottyOpts opts app
   Just p -> do
-    let cleanup sock = do
-          S.close sock
-          removeFile p
-
-    bracketOnError (socket AF_UNIX Stream 0) cleanup $ \sock -> do
+    let cleanup = (>> removeFile p) . S.close
+    bracket (socket AF_UNIX Stream 0) cleanup $ \sock -> do
       bind sock $ SockAddrUnix p
       listen sock maxListenQueue
       scottySocket opts sock app
+
+data Post = Post
+  { postId :: ObjectId
+  , postTitle :: Text
+  , postBody :: Text
+  }
+  deriving (Generic, Show, Eq)
+
+class FromDocument a where
+  fromDocument :: Document -> a
+
+instance FromDocument Document where
+  fromDocument = id
+
+instance FromDocument Post where
+  fromDocument d = Post{..}
+   where
+    postId = M.at "_id" d
+    postTitle = M.at "title" d
+    postBody = M.at "body" d
+
+postHtml :: Post -> Html -> Html
+postHtml p pb = H.article
+  H.! [classQQ|
+              prose
+              prose-slate
+              prose-a:no-underline
+              prose-a:bg-gradient-to-r
+              prose-a:from-indigo-500
+              prose-a:via-purple-500
+              prose-a:to-pink-500
+              prose-a:bg-left-bottom
+              prose-a:bg-no-repeat
+              prose-a:bg-underline
+              hover:prose-a:bg-underline-hover
+              prose-a:transition-background-size
+              prose-a:font-black
+              |]
+  $ do
+    H.h1 . H.toHtml $ postTitle p
+    pb
 
 main :: IO ()
 main = do
@@ -88,7 +131,7 @@ main = do
   debug <- isDebug
 
   dburi <- getEnv "MONGODB_URI"
-  webHost <- fromMaybe "localhost" <$> lookupEnv "HOST"
+  webHost <- fromMaybe "*" <$> lookupEnv "HOST"
   webPort <- fromMaybe "3000" <$> lookupEnv "PORT"
   socketPath <- lookupEnv "SOCKET"
 
@@ -112,22 +155,19 @@ main = do
         else logStdout
 
     get "/posts" $ do
-      setHeader "content-type" "text/html; charset=utf-8"
-
-      ps <- liftIO $ withResource pool $ \p ->
+      ds <- liftIO $ withResource pool $ \p ->
         access p master "blog" $
           find (select ["published" =: True] "posts"){sort = ["updated" =: (-1 :: Int)]} >>= rest
 
       posts <-
         liftIO
-          ( forM ps $ \p -> do
-              title <- M.lookup "title" p
-              htmlPost <- M.lookup "body" p >>= mdToHtml
-
-              return $
-                H.article H.! A.class_ "prose prose-slate" $ do
-                  H.h1 $ H.toHtml (title :: Text)
-                  htmlPost
+          ( forM ds $ \d -> do
+              let p = fromDocument d
+              pb <- mdToHtml $ postBody p
+              return $ postHtml p pb
           )
 
-      raw . renderHtml . sequence_ $ intersperse (H.div H.! A.class_ "divider" $ mempty) posts
+      blazeHtml . sequence_ $
+        intersperse
+          (H.div H.! A.class_ "divider" $ mempty)
+          posts
