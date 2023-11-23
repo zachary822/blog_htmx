@@ -11,7 +11,13 @@ import Text.Blaze.Html5.Attributes qualified as A
 import Web.Scotty (ActionM, raw, setHeader)
 
 classQQ :: QuasiQuoter
-classQQ = QuasiQuoter{quoteExp = \str -> [|A.class_ . fromString . unwords . words $ str|]}
+classQQ =
+  QuasiQuoter
+    { quoteExp = \str -> [|A.class_ . fromString . unwords . words $ str|]
+    , quotePat = error "not supported"
+    , quoteDec = error "not supported"
+    , quoteType = error "not supported"
+    }
 
 blazeHtml :: Html -> ActionM ()
 blazeHtml h = do

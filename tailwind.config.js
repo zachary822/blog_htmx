@@ -7,8 +7,8 @@ export default {
         "background-size": "background-size",
       },
       backgroundSize: {
-        underline: "0% 3px",
-        "underline-hover": "100% 3px",
+        underline: "0% 2px",
+        "underline-hover": "100% 2px",
       },
     },
   },

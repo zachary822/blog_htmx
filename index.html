@@ -9,8 +9,11 @@
     <title>ThoughtBank Blog</title>
 </head>
 <body>
-<main class="container" hx-get="/api/posts" hx-trigger="load">
-    Thing!
+<nav class="navbar bg-base-100">
+    <a href="/" class="btn btn-ghost text-xl">Thoughtbank Blog</a>
+</nav>
+<main class="md:container md:mx-auto" hx-get="/api/posts" hx-trigger="load">
+    <span class="htmx-indicator">Loading...</span>
 </main>
 <script type="module" src="/main.js"></script>
 </body>

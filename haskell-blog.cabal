@@ -61,7 +61,8 @@ executable haskell-blog
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    Lib.Blaze
+    other-modules:    Lib.Blaze,
+                      Lib.Database
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -81,7 +82,9 @@ executable haskell-blog
                       network,
                       directory,
                       pandoc,
-                      template-haskell
+                      pandoc-types,
+                      template-haskell,
+                      time
 
     -- Directories containing source files.
     hs-source-dirs:   app
