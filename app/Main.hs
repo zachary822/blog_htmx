@@ -24,7 +24,6 @@ import Data.Time.Format
 import Data.Time.Format.ISO8601
 import Database.MongoDB
 import Database.MongoDB qualified as M
-import Debug.Trace
 import GHC.Generics
 import Lib.Blaze
 import Lib.Database
@@ -54,6 +53,12 @@ isDebug :: IO Bool
 isDebug =
   lookupEnv "DEBUG" <&> \case
     Just "1" -> True
+    _ -> False
+
+isHxRequest :: ActionM Bool
+isHxRequest =
+  header "hx-request" <&> \case
+    Just "true" -> True
     _ -> False
 
 formatLink :: (Monad m) => Inline -> m Inline
@@ -192,19 +197,29 @@ postHtml p = H.article
         " (Updated: "
         timeEl (postUpdated p)
         ")"
-      H.div H.! [classQQ| my-0 flex gap-1 |] $ do
+      H.div H.! [classQQ| my-0 flex gap-2 |] $ do
         forM_ (postTags p) $ \t -> do
-          H.div H.! [classQQ| badge badge-neutral |] $ H.toHtml t
+          H.button
+            H.! [classQQ| badge badge-neutral |]
+            H.! hx "target" "#posts"
+            H.! hx "get" (fromString . T.unpack $ "/posts/tags/" <> t)
+            $ H.toHtml t
     mdToHtml $ postBody p
 
 divider :: Html
 divider = H.div H.! A.class_ "divider" $ mempty
 
-isHxRequest :: ActionM Bool
-isHxRequest =
-  header "hx-request" <&> \case
-    Just "true" -> True
-    _ -> False
+renderPosts :: [Document] -> Html
+renderPosts =
+  sequence_
+    . intersperse divider
+    . map (postHtml . fromDocument)
+
+getCurrentPage :: Page -> Integer
+getCurrentPage page = pageOffset page `div` pageLimit page + 1
+
+getMaxPage :: (Integral a, Integral b) => a -> Page -> b
+getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit page) :: Double)
 
 main :: IO ()
 main = do
@@ -243,7 +258,7 @@ main = do
         head
           <$> liftAndCatchIO
             ( withResource pool $ \p ->
-                access p slaveOk "blog" $
+                access p master "blog" $
                   aggregate
                     "posts"
                     ( postsPipline
@@ -255,17 +270,15 @@ main = do
 
       when (null docs) $ raiseStatus status404 "no posts"
 
-      let posts = map (postHtml . fromDocument) docs
-          total :: Integer = M.at "total" result
-          curr = pageOffset page `div` pageLimit page + 1
-          totalPage = ceiling (fromIntegral total / fromIntegral (pageLimit page) :: Double)
+      let total :: Integer = M.at "total" result
+          curr = getCurrentPage page
+          maxPage = getMaxPage total page
 
       blazeHtml $ do
-        sequence_ $
-          intersperse divider posts
-        when (totalPage > 1) $
+        renderPosts docs
+        when (maxPage > 1) $
           H.div H.! [classQQ| join |] $
-            forM_ [1 .. totalPage] $ \case
+            forM_ [1 .. maxPage] $ \case
               x
                 | x == curr ->
                     H.button
@@ -283,7 +296,7 @@ main = do
         head
           <$> liftAndCatchIO
             ( withResource pool $ \p ->
-                access p slaveOk "blog" $
+                access p master "blog" $
                   aggregate
                     "posts"
                     summaryPipeline
@@ -296,10 +309,14 @@ main = do
         H.ul $
           forM_ (monthly summary) $ \m -> do
             H.li $ do
+              let month@(YearMonth y my) = summaryMonth m
+
               H.a
                 H.! A.href "#"
+                H.! hx "target" "#posts"
+                H.! hx "get" (fromString $ concat ["/posts/months/", show y, "/", show my])
                 $ do
-                  fromString . show $ summaryMonth m
+                  fromString . show $ month
                   " ("
                   fromString . show $ monthCount m
                   ")"
@@ -325,7 +342,7 @@ main = do
         head
           <$> liftAndCatchIO
             ( withResource pool $ \p ->
-                access p slaveOk "blog" $
+                access p master "blog" $
                   aggregate
                     "posts"
                     ( postsTagPipline
@@ -338,17 +355,15 @@ main = do
 
       when (null docs) $ raiseStatus status404 "no posts"
 
-      let posts = map (postHtml . fromDocument) docs
-          total :: Integer = M.at "total" result
-          curr = pageOffset page `div` pageLimit page + 1
-          totalPage = ceiling (fromIntegral total / fromIntegral (pageLimit page) :: Double)
+      let total :: Integer = M.at "total" result
+          curr = getCurrentPage page
+          maxPage = getMaxPage total page
 
       blazeHtml $ do
-        sequence_ $
-          intersperse divider posts
-        when (totalPage > 1) $
+        renderPosts docs
+        when (maxPage > 1) $
           H.div H.! [classQQ| join |] $
-            forM_ [1 .. totalPage] $ \case
+            forM_ [1 .. maxPage] $ \case
               x
                 | x == curr ->
                     H.button
@@ -361,8 +376,64 @@ main = do
                     "get"
                     ( fromString . T.unpack $
                         T.concat
-                          [ "/posts/"
+                          [ "/posts/tags/"
                           , tag
+                          , "?offset="
+                          , T.pack $ show (pred o * pageLimit page)
+                          ]
+                    )
+                  H.! hx "target" "#posts"
+                  $ fromString (show o)
+
+    get "/posts/months/:year/:month" $ do
+      year :: Int <- captureParam "year"
+      month :: Int <- captureParam "month"
+      page <- getPage
+
+      result <-
+        head
+          <$> liftAndCatchIO
+            ( withResource pool $ \p ->
+                access p master "blog" $
+                  aggregate
+                    "posts"
+                    ( postsMonthPipline
+                        year
+                        month
+                        (pageLimit page)
+                        (pageOffset page)
+                    )
+            )
+
+      let docs = M.at "data" result
+
+      when (null docs) $ raiseStatus status404 "no posts"
+
+      let total :: Integer = M.at "total" result
+          curr = getCurrentPage page
+          maxPage = getMaxPage total page
+
+      blazeHtml $ do
+        renderPosts docs
+        when (maxPage > 1) $
+          H.div H.! [classQQ| join |] $
+            forM_ [1 .. maxPage] $ \case
+              x
+                | x == curr ->
+                    H.button
+                      H.! A.class_ "join-item btn btn-active"
+                      $ H.toHtml (show curr)
+              o ->
+                H.button
+                  H.! A.class_ "join-item btn"
+                  H.! hx
+                    "get"
+                    ( fromString . T.unpack $
+                        T.concat
+                          [ "/posts/months/"
+                          , T.pack $ show year
+                          , "/"
+                          , T.pack $ show month
                           , "?offset="
                           , T.pack $ show (pred o * pageLimit page)
                           ]

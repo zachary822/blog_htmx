@@ -2,6 +2,7 @@
 
 module Lib.Database where
 
+import Control.Concurrent (threadDelay)
 import Control.Monad
 import Data.Maybe
 import Data.Text (Text)
@@ -24,7 +25,8 @@ getDbInfo uri = fromJust $ do
 getPipe :: ReplicaSet -> Username -> Password -> IO Pipe
 getPipe rs uname passwd = do
   pipe <- primary rs
-  _ <- access pipe master admin (auth uname passwd)
+  isAuthed <- access pipe master admin (auth uname passwd)
+  unless isAuthed (threadDelay 100000) -- wait 100ms if not authed
   return pipe
 
 -- pipelines
@@ -88,6 +90,59 @@ postsTagPipline tag limit offset =
     ]
   ]
 
+postsMonthPipline :: (Val v0, Val v1, Val v2, Val v3) => v0 -> v1 -> v2 -> v3 -> [Document]
+postsMonthPipline year month limit offset =
+  [
+    [ "$facet"
+        =: [ "data"
+              =: [
+                   [ "$match"
+                      =: [ "published" =: True
+                         ]
+                   ]
+                 ,
+                   [ "$set"
+                      =: [ "year" =: ["$year" =: ("$updated" :: Text)]
+                         , "month" =: ["$month" =: ("$updated" :: Text)]
+                         ]
+                   ]
+                 , ["$match" =: ["year" =: year, "month" =: month]]
+                 , ["$sort" =: ["updated" =: (-1 :: Int)]]
+                 , ["$limit" =: limit]
+                 , ["$skip" =: offset]
+                 ,
+                   [ "$project"
+                      =: [ "published" =: (0 :: Int)
+                         , "year" =: (0 :: Int)
+                         , "month" =: (0 :: Int)
+                         ]
+                   ]
+                 ]
+           , "total"
+              =: [
+                   [ "$match"
+                      =: [ "published" =: True
+                         ]
+                   ]
+                 ,
+                   [ "$set"
+                      =: [ "year" =: ["$year" =: ("$updated" :: Text)]
+                         , "month" =: ["$month" =: ("$updated" :: Text)]
+                         ]
+                   ]
+                 , ["$match" =: ["year" =: year, "month" =: month]]
+                 , ["$count" =: ("total" :: Text)]
+                 ]
+           ]
+    ]
+  ,
+    [ "$project"
+        =: [ "data" =: (1 :: Int)
+           , "total" =: ["$first" =: ("$total.total" :: Text)]
+           ]
+    ]
+  ]
+
 summaryPipeline :: [Document]
 summaryPipeline =
   [
@@ -97,8 +152,8 @@ summaryPipeline =
                  ,
                    [ "$group"
                       =: [ "_id"
-                            =: [ "year" =: ["$year" =: ("$created" :: Text)]
-                               , "month" =: ["$month" =: ("$created" :: Text)]
+                            =: [ "year" =: ["$year" =: ("$updated" :: Text)]
+                               , "month" =: ["$month" =: ("$updated" :: Text)]
                                ]
                          , "count" =: ["$sum" =: (1 :: Int)]
                          ]
@@ -111,6 +166,7 @@ summaryPipeline =
                          , "count" =: (1 :: Int)
                          ]
                    ]
+                 , ["$sort" =: ["year" =: (-1 :: Int), "month" =: (-1 :: Int), "count" =: (-1 :: Int)]]
                  ]
            , "tags"
               =: [ ["$match" =: ["published" =: True]]
