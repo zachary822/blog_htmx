@@ -4,9 +4,11 @@
 
 module Lib.Blaze where
 
+import Data.String
 import Language.Haskell.TH.Quote
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
-import Text.Blaze.Html5 (Html)
+import Text.Blaze.Html5 (Attribute, AttributeValue, Html)
+import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Web.Scotty (ActionM, raw, setHeader)
 
@@ -23,3 +25,6 @@ blazeHtml :: Html -> ActionM ()
 blazeHtml h = do
   setHeader "Content-Type" "text/html; charset=utf-8"
   raw . renderHtml $ h
+
+hx :: String -> AttributeValue -> Attribute
+hx attr = H.customAttribute (fromString $ "hx-" <> attr)

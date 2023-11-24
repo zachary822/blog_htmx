@@ -80,6 +80,7 @@ executable haskell-blog
                       bytestring,
                       blaze-html,
                       network,
+                      http-types,
                       directory,
                       pandoc,
                       pandoc-types,
