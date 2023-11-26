@@ -85,6 +85,7 @@ executable haskell-blog
                       pandoc,
                       pandoc-types,
                       template-haskell,
+                      unix,
                       time
 
     -- Directories containing source files.

@@ -33,6 +33,7 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.RequestLogger
 import System.Directory
 import System.Environment
+import System.Posix.Files
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
@@ -40,6 +41,7 @@ import Text.Pandoc (
   Extension (..),
   Inline (..),
   ReaderOptions (..),
+  WriterOptions (..),
   def,
   extensionsFromList,
   readMarkdown,
@@ -70,9 +72,9 @@ mdToHtml :: Text -> Html
 mdToHtml =
   fromRight mempty
     . runPure
-    . ( writeHtml5 def
+    . ( writeHtml5 def{writerExtensions = extensionsFromList [Ext_raw_html]}
           <=< walkM formatLink
-          <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks]}
+          <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
       )
 
 scottySocket' :: Maybe FilePath -> Options -> ScottyM () -> IO ()
@@ -85,6 +87,7 @@ scottySocket' mpath opts app = case mpath of
           removeFile p
     bracket (socket AF_UNIX Stream 0) cleanup $ \sock -> do
       bind sock $ SockAddrUnix p
+      setFileMode p 0o777
       listen sock maxListenQueue
       scottySocket opts sock app
 
@@ -191,7 +194,7 @@ postHtml p = H.article
   $ do
     H.header $ do
       H.h1 $ H.toHtml (postTitle p)
-      H.div H.! [classQQ| my-0 text-sm |] $ do
+      H.div H.! [classQQ| mt-0 mb-1 text-sm |] $ do
         "Created: "
         timeEl (postCreated p)
         " (Updated: "
@@ -230,7 +233,7 @@ main = do
   dburi <- getEnv "MONGODB_URI"
   webHost <- fromMaybe "*" <$> lookupEnv "HOST"
   webPort <- fromMaybe "3000" <$> lookupEnv "PORT"
-  socketPath <- lookupEnv "SOCKET"
+  socketPath :: Maybe FilePath <- lookupEnv "SOCKET"
 
   let (dbhost, uname, passwd) = getDbInfo dburi
 

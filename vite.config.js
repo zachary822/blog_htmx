@@ -1,3 +1,5 @@
+import { resolve } from "path";
+
 /**
  * @type {import('vite').UserConfig}
  */
@@ -7,6 +9,18 @@ const config = {
       "/posts": {
         target: "http://localhost:3000",
         changeOrigin: true,
+      },
+      "/images": {
+        target: "https://blog2.thoughtbank.app",
+        changeOrigin: true,
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        404: resolve(__dirname, "404.html"),
       },
     },
   },
