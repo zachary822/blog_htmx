@@ -4,6 +4,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Main where
 
@@ -27,6 +28,8 @@ import Database.MongoDB qualified as M
 import GHC.Generics
 import Lib.Blaze
 import Lib.Database
+import Lib.Middleware
+import Lib.Rss
 import Network.HTTP.Types
 import Network.Socket as S
 import Network.Wai.Handler.Warp
@@ -51,61 +54,8 @@ import Text.Pandoc (
 import Text.Pandoc.Walk
 import Web.Scotty
 
-isDebug :: IO Bool
-isDebug =
-  lookupEnv "DEBUG" <&> \case
-    Just "1" -> True
-    _ -> False
-
-isHxRequest :: ActionM Bool
-isHxRequest =
-  header "hx-request" <&> \case
-    Just "true" -> True
-    _ -> False
-
-formatLink :: (Monad m) => Inline -> m Inline
-formatLink (Link (id_, cls, attrs) content target) = do
-  return $ Link (id_, cls, ("rel", "noopener noreferrer") : ("target", "_blank") : attrs) content target
-formatLink a = return a
-
-mdToHtml :: Text -> Html
-mdToHtml =
-  fromRight mempty
-    . runPure
-    . ( writeHtml5 def{writerExtensions = extensionsFromList [Ext_raw_html]}
-          <=< walkM formatLink
-          <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
-      )
-
-scottySocket' :: Maybe FilePath -> Options -> ScottyM () -> IO ()
-scottySocket' mpath opts app = case mpath of
-  Nothing -> do
-    scottyOpts opts app
-  Just p -> do
-    let cleanup s = do
-          S.close s
-          removeFile p
-    bracket (socket AF_UNIX Stream 0) cleanup $ \sock -> do
-      bind sock $ SockAddrUnix p
-      setFileMode p 0o777
-      listen sock maxListenQueue
-      scottySocket opts sock app
-
-data Page = Page
-  { pageLimit :: Integer
-  , pageOffset :: Integer
-  }
-  deriving (Show, Eq)
-
-returnDefault :: a -> StatusError -> ActionM a
-returnDefault a = const (return a)
-
-getPage :: ActionM Page
-getPage = do
-  pageLimit <- queryParam "limit" `rescue` returnDefault 10
-  pageOffset <- queryParam "offset" `rescue` returnDefault 0
-
-  return Page{..}
+instance Parsable ObjectId where
+  parseParam = readEither
 
 class FromDocument a where
   fromDocument :: Document -> a
@@ -169,16 +119,70 @@ instance FromDocument Summary where
     monthly = map fromDocument (M.at "monthly" d)
     tags = map fromDocument (M.at "tags" d)
 
+data Page = Page
+  { pageLimit :: Integer
+  , pageOffset :: Integer
+  }
+  deriving (Show, Eq)
+
+isDebug :: IO Bool
+isDebug =
+  lookupEnv "DEBUG" <&> \case
+    Just "1" -> True
+    _ -> False
+
+isHxRequest :: ActionM Bool
+isHxRequest =
+  header "hx-request" <&> \case
+    Just "true" -> True
+    _ -> False
+
+formatLink :: (Monad m) => Inline -> m Inline
+formatLink (Link (id_, cls, attrs) content target) = do
+  return $ Link (id_, cls, ("rel", "noopener noreferrer") : ("target", "_blank") : attrs) content target
+formatLink a = return a
+
+mdToHtml :: Text -> Html
+mdToHtml =
+  fromRight mempty
+    . runPure
+    . ( writeHtml5 def{writerExtensions = extensionsFromList [Ext_raw_html]}
+          <=< walkM formatLink
+          <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
+      )
+
+scottySocket' :: Maybe FilePath -> Options -> ScottyM () -> IO ()
+scottySocket' mpath opts app = case mpath of
+  Nothing -> do
+    scottyOpts opts app
+  Just p -> do
+    let cleanup s = do
+          S.close s
+          removeFile p
+    bracket (socket AF_UNIX Stream 0) cleanup $ \sock -> do
+      bind sock $ SockAddrUnix p
+      setFileMode p 0o777
+      listen sock maxListenQueue
+      scottySocket opts sock app
+
+returnDefault :: a -> StatusError -> ActionM a
+returnDefault a = const (return a)
+
+getPage :: ActionM Page
+getPage = do
+  pageLimit <- queryParam "limit" `rescue` returnDefault 10
+  pageOffset <- queryParam "offset" `rescue` returnDefault 0
+
+  return Page{..}
+
 timeEl :: (FormatTime t, ISO8601 t) => t -> Html
 timeEl t = do
   H.time H.! A.datetime (fromString $ formatShow iso8601Format t) $
     H.toHtml $
       formatTime defaultTimeLocale "%c" t
 
-postHtml :: Post -> Html
-postHtml p = H.article
-  H.! [classQQ|
-              prose
+{-
+The fun underline classes
               prose-a:bg-gradient-to-r
               prose-a:from-indigo-500
               prose-a:via-purple-500
@@ -187,13 +191,26 @@ postHtml p = H.article
               prose-a:bg-no-repeat
               prose-a:bg-underline
               hover:prose-a:bg-underline-hover
-              hover:prose-a:no-underline
               prose-a:transition-background-size
+-}
+
+postHtml :: Post -> Html
+postHtml p = H.article
+  H.! [classQQ|
+              prose
               prose-h1:mb-1
+              prose-h1:no-underline
               |]
   $ do
     H.header $ do
-      H.h1 $ H.toHtml (postTitle p)
+      let pid = show $ postId p
+      H.a
+        H.! A.id (fromString $ "posts:" <> pid)
+        H.! hx "get" (fromString $ "/posts/" <> pid)
+        H.! hx "push-url" "true"
+        H.! hx "target" "#posts"
+        $ do
+          H.h1 $ H.toHtml (postTitle p)
       H.div H.! [classQQ| mt-0 mb-1 text-sm |] $ do
         "Created: "
         timeEl (postCreated p)
@@ -218,6 +235,9 @@ renderPosts =
     . intersperse divider
     . map (postHtml . fromDocument)
 
+getTotal :: Document -> Integer
+getTotal = M.at "total"
+
 getCurrentPage :: Page -> Integer
 getCurrentPage page = pageOffset page `div` pageLimit page + 1
 
@@ -239,7 +259,7 @@ main = do
 
   rs <- openReplicaSetSRV' dbhost
 
-  pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 10)
+  pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 3)
 
   let opts =
         defaultOptions
@@ -254,7 +274,9 @@ main = do
         then logStdoutDev
         else logStdout
 
-    get "/posts" $ do
+    middleware rewriteHtmxPostsMiddleware
+
+    get "/posts/" $ do
       page <- getPage
 
       result <-
@@ -273,7 +295,7 @@ main = do
 
       when (null docs) $ raiseStatus status404 "no posts"
 
-      let total :: Integer = M.at "total" result
+      let total = getTotal result
           curr = getCurrentPage page
           maxPage = getMaxPage total page
 
@@ -290,9 +312,25 @@ main = do
               o ->
                 H.button
                   H.! A.class_ "join-item btn"
-                  H.! hx "get" (fromString $ "/posts?offset=" <> show (pred o * pageLimit page))
+                  H.! hx "push-url" "true"
+                  H.! hx "get" (fromString $ "/posts/?offset=" <> show (pred o * pageLimit page))
                   H.! hx "target" "#posts"
                   $ fromString (show o)
+
+    get "/posts/:pid" $ do
+      pid :: ObjectId <- captureParam "pid"
+
+      result <-
+        liftAndCatchIO
+          ( withResource pool $ \p ->
+              access p master "blog" $
+                find (select (getPost pid) "posts") >>= M.next
+          )
+
+      case result of
+        Nothing -> raiseStatus status404 "Not Found"
+        Just doc -> blazeHtml $ do
+          postHtml $ fromDocument doc
 
     get "/posts/summary" $ do
       result <-
@@ -316,6 +354,7 @@ main = do
 
               H.a
                 H.! A.href "#"
+                H.! hx "push-url" "true"
                 H.! hx "target" "#posts"
                 H.! hx "get" (fromString $ concat ["/posts/months/", show y, "/", show my])
                 $ do
@@ -329,6 +368,7 @@ main = do
             H.li $ do
               H.a
                 H.! A.href "#"
+                H.! hx "push-url" "true"
                 H.! hx "target" "#posts"
                 H.! hx "get" (fromString . T.unpack $ "/posts/tags/" <> tagName t)
                 $ do
@@ -339,6 +379,8 @@ main = do
 
     get "/posts/tags/:tag" $ do
       tag :: Text <- captureParam "tag"
+      when (T.null tag) $ raiseStatus status404 "empty tag"
+
       page <- getPage
 
       result <-
@@ -358,7 +400,7 @@ main = do
 
       when (null docs) $ raiseStatus status404 "no posts"
 
-      let total :: Integer = M.at "total" result
+      let total = getTotal result
           curr = getCurrentPage page
           maxPage = getMaxPage total page
 
@@ -385,6 +427,7 @@ main = do
                           , T.pack $ show (pred o * pageLimit page)
                           ]
                     )
+                  H.! hx "push-url" "true"
                   H.! hx "target" "#posts"
                   $ fromString (show o)
 
@@ -412,7 +455,7 @@ main = do
 
       when (null docs) $ raiseStatus status404 "no posts"
 
-      let total :: Integer = M.at "total" result
+      let total = getTotal result
           curr = getCurrentPage page
           maxPage = getMaxPage total page
 
@@ -441,5 +484,38 @@ main = do
                           , T.pack $ show (pred o * pageLimit page)
                           ]
                     )
+                  H.! hx "push-url" "true"
                   H.! hx "target" "#posts"
                   $ fromString (show o)
+
+    get "/posts/search" $ do
+      page <- getPage
+      q <- T.strip <$> queryParam "q"
+      when (T.null q) $ redirect "/posts/"
+
+      docs <-
+        liftAndCatchIO
+          ( withResource pool $ \p ->
+              access p master "blog" $
+                aggregate
+                  "posts"
+                  ( postsSearchPipeline
+                      q
+                      (pageLimit page)
+                      (pageOffset page)
+                  )
+          )
+      if null docs
+        then blazeHtml $ do
+          H.div "No Results Found"
+        else blazeHtml $ do
+          renderPosts docs
+
+    get "/posts/feed" $ do
+      rssXml $ do
+        xmlHeader
+        rss $ do
+          title "ThoughtBank Blog"
+          link "http://localhost:5173"
+          description "Thoughts and concerns from my programming journey."
+          language "en-us"

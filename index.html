@@ -14,13 +14,17 @@
         <a href="/" class="btn btn-ghost text-xl">Thoughtbank Blog</a>
     </div>
     <div class="flex-none">
-        <input type="search" placeholder="Search"
+        <input type="text" name="q" placeholder="Search" aria-label="search"
+               hx-get="/posts/search"
+               hx-target="#posts"
+               hx-push-url="true"
+               hx-trigger="keyup changed delay:500ms"
                class="input input-bordered w-full max-w-xs bg-neutral text-neutral-content"/>
     </div>
 </nav>
 <div class="md:container md:mx-auto">
     <div class="md:grid md:grid-cols-4 md:gap-4">
-        <main id="posts" class="md:col-span-3 mx-auto" hx-get="/posts" hx-trigger="load">
+        <main id="posts" class="md:col-span-3 mx-auto" hx-get="/posts/" hx-trigger="load">
             <span class="htmx-indicator loading loading-dots loading-md"></span>
         </main>
         <div class="md:col-span-1">

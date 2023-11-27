@@ -1,5 +1,4 @@
 *~
-dist/
 dist-newstyle/
 node_modules/
 .env*

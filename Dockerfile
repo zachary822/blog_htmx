@@ -4,8 +4,8 @@ WORKDIR /build
 
 RUN cabal update
 
-COPY *.cabal cabal.project ./
 COPY CHANGELOG.md ./
+COPY *.cabal *.project ./
 
 RUN cabal build --dependencies-only
 

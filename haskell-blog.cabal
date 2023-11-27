@@ -51,7 +51,7 @@ extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
 common warnings
-    ghc-options: -Wall
+    ghc-options: -Wall -Wunused-packages
 
 executable haskell-blog
     -- Import common warning flags.
@@ -62,23 +62,27 @@ executable haskell-blog
 
     -- Modules included in this executable, other than Main.
     other-modules:    Lib.Blaze,
-                      Lib.Database
+                      Lib.Database,
+                      Lib.Rss,
+                      Lib.Middleware
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.18.1.0,
+                      bytestring,
                       scotty,
                       mongoDB,
                       dotenv,
                       warp,
+                      wai,
                       wai-extra,
                       network-uri,
                       resource-pool,
                       text,
-                      bytestring,
                       blaze-html,
+                      blaze-markup,
                       network,
                       http-types,
                       directory,
@@ -86,7 +90,8 @@ executable haskell-blog
                       pandoc-types,
                       template-haskell,
                       unix,
-                      time
+                      time,
+                      transformers
 
     -- Directories containing source files.
     hs-source-dirs:   app

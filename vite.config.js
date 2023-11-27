@@ -9,6 +9,12 @@ const config = {
       "/posts": {
         target: "http://localhost:3000",
         changeOrigin: true,
+        bypass: (req, res, options) => {
+          if (req.headers["hx-request"] === "true") {
+            return null;
+          }
+          return "/";
+        },
       },
       "/images": {
         target: "https://blog2.thoughtbank.app",

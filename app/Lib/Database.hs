@@ -55,6 +55,29 @@ postsPipline limit offset =
     ]
   ]
 
+getPost :: ObjectId -> Document
+getPost oid =
+  [ "_id" =: oid
+  , "published" =: True
+  ]
+
+postsSearchPipeline :: (Val v0, Val v1) => Text -> v0 -> v1 -> [Document]
+postsSearchPipeline q limit offset =
+  [
+    [ "$search"
+        =: [ "text"
+              =: [ "query" =: q
+                 , "path" =: (["title", "body"] :: [Text])
+                 , "fuzzy" =: ([] :: Document)
+                 ]
+           ]
+    ]
+  , ["$match" =: ["published" =: True]]
+  , ["$limit" =: limit]
+  , ["$skip" =: offset]
+  , ["$project" =: ["published" =: (0 :: Int)]]
+  ]
+
 postsTagPipline :: (Val v0, Val v1) => Text -> v0 -> v1 -> [Document]
 postsTagPipline tag limit offset =
   [
