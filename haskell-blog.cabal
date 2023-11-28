@@ -64,6 +64,7 @@ executable haskell-blog
     other-modules:    Lib.Blaze,
                       Lib.Database,
                       Lib.Rss,
+                      Lib.Rss.Attributes,
                       Lib.Middleware,
                       Lib.Types
 

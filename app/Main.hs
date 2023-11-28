@@ -31,6 +31,7 @@ import Lib.Blaze
 import Lib.Database
 import Lib.Middleware
 import Lib.Rss
+import Lib.Rss.Attributes qualified as RA
 import Lib.Types
 import Network.HTTP.Types
 import Network.Socket as S
@@ -461,16 +462,17 @@ main = do
 
       rssXml $ do
         xmlHeader
-        rss $ do
+        rss . channel $ do
           title "ThoughtBank Blog"
           link "http://localhost:5173"
+          atomLink RA.! RA.href "http://localhost:5173/posts/feed" RA.! RA.rel "self"
           description "Thoughts and concerns from my programming journey."
           language "en-us"
           forM_ posts $ \p -> item $ do
             let l = toRss $ "http://localhost:5173/posts/" <> show (postId p)
 
             title . toRss $ postTitle p
-            pubDate . toRss . formatTime defaultTimeLocale "%a, %e %b %Y %R %z" $ postUpdated p
+            pubDate . toRss . formatTime defaultTimeLocale "%a, %d %b %Y %R %z" $ postUpdated p
             link l
             guid l
             description . cdata . mdToHtml $ postBody p
