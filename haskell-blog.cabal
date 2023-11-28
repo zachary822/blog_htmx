@@ -64,7 +64,8 @@ executable haskell-blog
     other-modules:    Lib.Blaze,
                       Lib.Database,
                       Lib.Rss,
-                      Lib.Middleware
+                      Lib.Middleware,
+                      Lib.Types
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

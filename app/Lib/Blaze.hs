@@ -6,11 +6,12 @@ module Lib.Blaze where
 
 import Data.String
 import Language.Haskell.TH.Quote
+import Lib.Types
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 (Attribute, AttributeValue, Html)
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
-import Web.Scotty (ActionM, raw, setHeader)
+import Web.Scotty.Trans (raw, setHeader)
 
 classQQ :: QuasiQuoter
 classQQ =

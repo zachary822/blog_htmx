@@ -3,10 +3,11 @@
 module Lib.Rss where
 
 import Data.String
+import Lib.Types
 import Text.Blaze
 import Text.Blaze.Internal (MarkupM (..))
 import Text.Blaze.Renderer.Utf8 (renderMarkup)
-import Web.Scotty (ActionM, raw, setHeader)
+import Web.Scotty.Trans (raw, setHeader)
 
 type RSS = Markup
 

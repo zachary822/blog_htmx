@@ -8,9 +8,12 @@
 
 module Main where
 
-import Configuration.Dotenv
+import Configuration.Dotenv (defaultConfig, loadFile, onMissingFile)
 import Control.Exception
 import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import Data.Either
 import Data.Functor ((<&>))
 import Data.List (intersperse)
@@ -30,8 +33,10 @@ import Lib.Blaze
 import Lib.Database
 import Lib.Middleware
 import Lib.Rss
+import Lib.Types
 import Network.HTTP.Types
 import Network.Socket as S
+import Network.Wai (Response)
 import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.RequestLogger
 import System.Directory
@@ -52,7 +57,7 @@ import Text.Pandoc (
   writeHtml5,
  )
 import Text.Pandoc.Walk
-import Web.Scotty
+import Web.Scotty.Trans
 
 instance Parsable ObjectId where
   parseParam = readEither
@@ -151,10 +156,10 @@ mdToHtml =
           <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
       )
 
-scottySocket' :: Maybe FilePath -> Options -> ScottyM () -> IO ()
-scottySocket' mpath opts app = case mpath of
+scottySocketT' :: Maybe FilePath -> Options -> (ConfigReader Response -> IO Response) -> ScottyM () -> IO ()
+scottySocketT' mpath opts pool app = case mpath of
   Nothing -> do
-    scottyOpts opts app
+    scottyOptsT opts pool app
   Just p -> do
     let cleanup s = do
           S.close s
@@ -163,7 +168,7 @@ scottySocket' mpath opts app = case mpath of
       bind sock $ SockAddrUnix p
       setFileMode p 0o777
       listen sock maxListenQueue
-      scottySocket opts sock app
+      scottySocketT opts sock pool app
 
 returnDefault :: a -> StatusError -> ActionM a
 returnDefault a = const (return a)
@@ -244,6 +249,14 @@ getCurrentPage page = pageOffset page `div` pageLimit page + 1
 getMaxPage :: (Integral a, Integral b) => a -> Page -> b
 getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit page) :: Double)
 
+runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (ReaderT Config m) b
+runDb dbname q = do
+  pool <- getPool <$> lift ask
+  liftAndCatchIO
+    ( withResource pool $ \p ->
+        access p master dbname q
+    )
+
 main :: IO ()
 main = do
   onMissingFile (loadFile defaultConfig) mempty
@@ -261,6 +274,8 @@ main = do
 
   pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 3)
 
+  let f r = runReaderT r Config{getPool = pool}
+
   let opts =
         defaultOptions
           { settings =
@@ -268,7 +283,7 @@ main = do
                 settings defaultOptions
           }
 
-  scottySocket' socketPath opts $ do
+  scottySocketT' socketPath opts f $ do
     middleware $
       if debug
         then logStdoutDev
@@ -281,16 +296,16 @@ main = do
 
       result <-
         head
-          <$> liftAndCatchIO
-            ( withResource pool $ \p ->
-                access p master "blog" $
-                  aggregate
-                    "posts"
-                    ( postsPipline
-                        (pageLimit page)
-                        (pageOffset page)
-                    )
+          <$> runDb
+            "blog"
+            ( aggregate
+                "posts"
+                ( postsPipline
+                    (pageLimit page)
+                    (pageOffset page)
+                )
             )
+
       let docs = M.at "data" result
 
       when (null docs) $ raiseStatus status404 "no posts"
@@ -335,12 +350,11 @@ main = do
     get "/posts/summary" $ do
       result <-
         head
-          <$> liftAndCatchIO
-            ( withResource pool $ \p ->
-                access p master "blog" $
-                  aggregate
-                    "posts"
-                    summaryPipeline
+          <$> runDb
+            "blog"
+            ( aggregate
+                "posts"
+                summaryPipeline
             )
 
       let summary = fromDocument result :: Summary
@@ -385,16 +399,15 @@ main = do
 
       result <-
         head
-          <$> liftAndCatchIO
-            ( withResource pool $ \p ->
-                access p master "blog" $
-                  aggregate
-                    "posts"
-                    ( postsTagPipline
-                        tag
-                        (pageLimit page)
-                        (pageOffset page)
-                    )
+          <$> runDb
+            "blog"
+            ( aggregate
+                "posts"
+                ( postsTagPipline
+                    tag
+                    (pageLimit page)
+                    (pageOffset page)
+                )
             )
       let docs = M.at "data" result
 
@@ -438,17 +451,16 @@ main = do
 
       result <-
         head
-          <$> liftAndCatchIO
-            ( withResource pool $ \p ->
-                access p master "blog" $
-                  aggregate
-                    "posts"
-                    ( postsMonthPipline
-                        year
-                        month
-                        (pageLimit page)
-                        (pageOffset page)
-                    )
+          <$> runDb
+            "blog"
+            ( aggregate
+                "posts"
+                ( postsMonthPipline
+                    year
+                    month
+                    (pageLimit page)
+                    (pageOffset page)
+                )
             )
 
       let docs = M.at "data" result
@@ -494,16 +506,15 @@ main = do
       when (T.null q) $ redirect "/posts/"
 
       docs <-
-        liftAndCatchIO
-          ( withResource pool $ \p ->
-              access p master "blog" $
-                aggregate
-                  "posts"
-                  ( postsSearchPipeline
-                      q
-                      (pageLimit page)
-                      (pageOffset page)
-                  )
+        runDb
+          "blog"
+          ( aggregate
+              "posts"
+              ( postsSearchPipeline
+                  q
+                  (pageLimit page)
+                  (pageOffset page)
+              )
           )
       if null docs
         then blazeHtml $ do
