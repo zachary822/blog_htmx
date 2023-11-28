@@ -9,7 +9,7 @@ import Text.Blaze
 import Text.Blaze.Internal
 
 href :: AttributeValue -> Attribute
-href = attribute "href" "href=\""
+href = attribute "href" " href=\""
 
 rel :: AttributeValue -> Attribute
-rel = attribute "rel" "rel=\""
+rel = attribute "rel" " rel=\""

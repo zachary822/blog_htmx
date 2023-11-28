@@ -53,7 +53,7 @@ pubDate :: RSS -> RSS
 pubDate = Parent "pubDate" "<pubDate" "</pubDate>"
 
 atomLink :: RSS
-atomLink = Leaf "atom:link" "<atom:link" ">" ()
+atomLink = Leaf "atom:link" "<atom:link" "/>" ()
 
 item :: RSS -> RSS
 item = Parent "item" "<item" "</item>"
