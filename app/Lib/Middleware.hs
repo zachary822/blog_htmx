@@ -46,7 +46,7 @@ rewriteHtmxPosts p@(ps, qs) h = do
         htmxURI <- hoistMaybe $ parseURI . T.unpack $ decodeUtf8 htmxUrl
 
         let ps' = decodePathSegments . encodeUtf8 . T.pack $ uriPath htmxURI
-        guard ((isPrefixOf `on` filter (not . T.null)) ps ps')
+        guard ((isPrefixOf `on` dropWhileEnd T.null) ps ps')
 
         let qs' = parseQuery . encodeUtf8 . T.pack $ uriQuery htmxURI
 

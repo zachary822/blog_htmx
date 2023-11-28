@@ -4,7 +4,6 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Main where
 
@@ -14,6 +13,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import Control.Retry
 import Data.Either
 import Data.Functor ((<&>))
 import Data.List (intersperse)
@@ -23,12 +23,10 @@ import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Calendar.Month
-import Data.Time.Clock
 import Data.Time.Format
 import Data.Time.Format.ISO8601
 import Database.MongoDB
 import Database.MongoDB qualified as M
-import GHC.Generics
 import Lib.Blaze
 import Lib.Database
 import Lib.Middleware
@@ -58,77 +56,6 @@ import Text.Pandoc (
  )
 import Text.Pandoc.Walk
 import Web.Scotty.Trans
-
-instance Parsable ObjectId where
-  parseParam = readEither
-
-class FromDocument a where
-  fromDocument :: Document -> a
-
-instance FromDocument Document where
-  fromDocument = id
-
-data Post = Post
-  { postId :: ObjectId
-  , postTitle :: Text
-  , postBody :: Text
-  , postCreated :: UTCTime
-  , postUpdated :: UTCTime
-  , postTags :: [Text]
-  }
-  deriving (Generic, Show, Eq)
-
-instance FromDocument Post where
-  fromDocument d = Post{..}
-   where
-    postId = M.at "_id" d
-    postTitle = M.at "title" d
-    postBody = M.at "body" d
-    postCreated = M.at "created" d
-    postUpdated = M.at "updated" d
-    postTags = M.at "tags" d
-
-data MonthSummary = MonthSummary
-  { summaryMonth :: Month
-  , monthCount :: Integer
-  }
-  deriving (Generic, Show, Eq)
-
-instance FromDocument MonthSummary where
-  fromDocument d = MonthSummary{..}
-   where
-    summaryMonth = YearMonth (M.at "year" d) (M.at "month" d)
-    monthCount = M.at "count" d
-
-data TagSummary = TagSummary
-  { tagName :: Text
-  , tagCount :: Integer
-  }
-  deriving (Generic, Show, Eq)
-
-instance FromDocument TagSummary where
-  fromDocument d = TagSummary{..}
-   where
-    tagName = M.at "name" d
-    tagCount = M.at "count" d
-
-data Summary = Summary
-  { monthly :: [MonthSummary]
-  , tags :: [TagSummary]
-  }
-  deriving (Generic, Show, Eq)
-
-instance FromDocument Summary where
-  fromDocument d = Summary{..}
-   where
-    monthly = map fromDocument (M.at "monthly" d)
-    tags = map fromDocument (M.at "tags" d)
-
-data Page = Page
-  { pageLimit :: Integer
-  , pageOffset :: Integer
-  }
-  deriving (Show, Eq)
 
 isDebug :: IO Bool
 isDebug =
@@ -252,10 +179,11 @@ getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit pa
 runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (ReaderT Config m) b
 runDb dbname q = do
   pool <- getPool <$> lift ask
-  liftAndCatchIO
-    ( withResource pool $ \p ->
-        access p master dbname q
-    )
+  liftAndCatchIO $
+    recoverAll limitedBackoff $
+      const $ do
+        withResource pool $ \p ->
+          access p master dbname q
 
 main :: IO ()
 main = do
@@ -272,11 +200,10 @@ main = do
 
   rs <- openReplicaSetSRV' dbhost
 
-  pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 3)
+  pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 5)
 
-  let f r = runReaderT r Config{getPool = pool}
-
-  let opts =
+  let f = flip runReaderT Config{getPool = pool}
+      opts =
         defaultOptions
           { settings =
               setHost (fromString webHost) . setPort (read webPort) $
@@ -300,7 +227,7 @@ main = do
             "blog"
             ( aggregate
                 "posts"
-                ( postsPipline
+                ( postsPipeline
                     (pageLimit page)
                     (pageOffset page)
                 )
@@ -335,17 +262,14 @@ main = do
     get "/posts/:pid" $ do
       pid :: ObjectId <- captureParam "pid"
 
-      result <-
-        liftAndCatchIO
-          ( withResource pool $ \p ->
-              access p master "blog" $
-                find (select (getPost pid) "posts") >>= M.next
-          )
-
-      case result of
-        Nothing -> raiseStatus status404 "Not Found"
-        Just doc -> blazeHtml $ do
-          postHtml $ fromDocument doc
+      runDb
+        "blog"
+        ( find (select (getPost pid) "posts") >>= M.rest
+        )
+        >>= \case
+          [] -> raiseStatus status404 "Not Found"
+          doc : _ -> blazeHtml $ do
+            postHtml $ fromDocument doc
 
     get "/posts/summary" $ do
       result <-
@@ -523,6 +447,18 @@ main = do
           renderPosts docs
 
     get "/posts/feed" $ do
+      posts :: [Post] <-
+        map fromDocument
+          <$> runDb
+            "blog"
+            ( aggregate
+                "posts"
+                ( postsPipeline'
+                    (10 :: Int)
+                    (0 :: Int)
+                )
+            )
+
       rssXml $ do
         xmlHeader
         rss $ do
@@ -530,3 +466,11 @@ main = do
           link "http://localhost:5173"
           description "Thoughts and concerns from my programming journey."
           language "en-us"
+          forM_ posts $ \p -> item $ do
+            let l = toRss $ "http://localhost:5173/posts/" <> show (postId p)
+
+            title . toRss $ postTitle p
+            pubDate . toRss . formatTime defaultTimeLocale "%a, %e %b %Y %R %z" $ postUpdated p
+            link l
+            guid l
+            description . cdata . mdToHtml $ postBody p

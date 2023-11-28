@@ -11,6 +11,9 @@ import Web.Scotty.Trans (raw, setHeader)
 
 type RSS = Markup
 
+toRss :: (ToMarkup a) => a -> RSS
+toRss = toMarkup
+
 rssXml :: RSS -> ActionM ()
 rssXml r = do
   setHeader "Content-Type" "application/rss+xml"
@@ -37,6 +40,9 @@ title = Parent "title" "<title" "</title>"
 link :: RSS -> RSS
 link = Parent "link" "<link" "</link>"
 
+guid :: RSS -> RSS
+guid = Parent "guid" "<guid" "</guid>"
+
 description :: RSS -> RSS
 description = Parent "description" "<description" "</description>"
 
@@ -51,3 +57,6 @@ atomLink = Leaf "atom:link" "<atom:link" ">" ()
 
 item :: RSS -> RSS
 item = Parent "item" "<item" "</item>"
+
+cdata :: Markup -> RSS
+cdata d = preEscapedText "<![CDATA[" >> d >> preEscapedText "]]>"

@@ -2,13 +2,16 @@
 
 module Lib.Database where
 
-import Control.Concurrent (threadDelay)
 import Control.Monad
+import Control.Retry
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
 import Database.MongoDB
 import Network.URI
+
+limitedBackoff :: RetryPolicyM IO
+limitedBackoff = exponentialBackoff 50000 <> limitRetries 5
 
 getDbInfo :: String -> (String, Username, Password)
 getDbInfo uri = fromJust $ do
@@ -25,22 +28,28 @@ getDbInfo uri = fromJust $ do
 getPipe :: ReplicaSet -> Username -> Password -> IO Pipe
 getPipe rs uname passwd = do
   pipe <- primary rs
-  isAuthed <- access pipe master admin (auth uname passwd)
-  unless isAuthed (threadDelay 100000) -- wait 100ms if not authed
+  _ <-
+    retrying
+      limitedBackoff
+      (\_ b -> return $ not b)
+      $ const (access pipe master admin (auth uname passwd))
   return pipe
 
 -- pipelines
-postsPipline :: (Val v0, Val v1) => v0 -> v1 -> [Document]
-postsPipline limit offset =
+postsPipeline' :: (Val v0, Val v1) => v0 -> v1 -> [Document]
+postsPipeline' limit offset =
+  [ ["$match" =: ["published" =: True]]
+  , ["$sort" =: ["updated" =: (-1 :: Int)]]
+  , ["$limit" =: limit]
+  , ["$skip" =: offset]
+  , ["$project" =: ["published" =: (0 :: Int)]]
+  ]
+
+postsPipeline :: (Val v0, Val v1) => v0 -> v1 -> [Document]
+postsPipeline limit offset =
   [
     [ "$facet"
-        =: [ "data"
-              =: [ ["$match" =: ["published" =: True]]
-                 , ["$sort" =: ["updated" =: (-1 :: Int)]]
-                 , ["$limit" =: limit]
-                 , ["$skip" =: offset]
-                 , ["$project" =: ["published" =: (0 :: Int)]]
-                 ]
+        =: [ "data" =: postsPipeline' limit offset
            , "total"
               =: [ ["$match" =: ["published" =: True]]
                  , ["$count" =: ("total" :: Text)]

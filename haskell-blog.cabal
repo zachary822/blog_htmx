@@ -92,7 +92,8 @@ executable haskell-blog
                       template-haskell,
                       unix,
                       time,
-                      transformers
+                      transformers,
+                      retry
 
     -- Directories containing source files.
     hs-source-dirs:   app
