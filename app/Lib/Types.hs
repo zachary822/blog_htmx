@@ -15,13 +15,14 @@ import Database.MongoDB qualified as M
 import GHC.Generics
 import Web.Scotty.Trans
 
-newtype Config = Config
+newtype AppConfig = AppConfig
   { getPool :: Pool Pipe
   }
 
-type ConfigReader = ReaderT Config IO
-type ScottyM = ScottyT ConfigReader
-type ActionM = ActionT ConfigReader
+type AppConfigReaderM m = ReaderT AppConfig m
+type AppConfigReader = AppConfigReaderM IO
+type ScottyM = ScottyT AppConfigReader
+type ActionM = ActionT AppConfigReader
 
 newtype Oid = Oid ObjectId
 

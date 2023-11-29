@@ -84,7 +84,7 @@ mdToHtml =
           <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
       )
 
-scottySocketT' :: Maybe FilePath -> Options -> (ConfigReader Response -> IO Response) -> ScottyM () -> IO ()
+scottySocketT' :: Maybe FilePath -> Options -> (AppConfigReader Response -> IO Response) -> ScottyM () -> IO ()
 scottySocketT' mpath opts pool app = case mpath of
   Nothing -> do
     scottyOptsT opts pool app
@@ -177,7 +177,7 @@ getCurrentPage page = pageOffset page `div` pageLimit page + 1
 getMaxPage :: (Integral a, Integral b) => a -> Page -> b
 getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit page) :: Double)
 
-runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (ReaderT Config m) b
+runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (AppConfigReaderM m) b
 runDb dbname q = do
   pool <- getPool <$> lift ask
   liftAndCatchIO $
@@ -203,7 +203,7 @@ main = do
 
   pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 5)
 
-  let f = flip runReaderT Config{getPool = pool}
+  let f = flip runReaderT AppConfig{getPool = pool}
       opts =
         defaultOptions
           { settings =
