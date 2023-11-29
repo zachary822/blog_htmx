@@ -25,7 +25,7 @@ import Data.Text qualified as T
 import Data.Time.Calendar.Month
 import Data.Time.Format
 import Data.Time.Format.ISO8601
-import Database.MongoDB
+import Database.MongoDB hiding (Oid)
 import Database.MongoDB qualified as M
 import Lib.Blaze
 import Lib.Database
@@ -261,7 +261,7 @@ main = do
                   $ fromString (show o)
 
     get "/posts/:pid" $ do
-      pid :: ObjectId <- captureParam "pid"
+      Oid pid <- captureParam "pid"
 
       runDb
         "blog"

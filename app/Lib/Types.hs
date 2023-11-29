@@ -1,16 +1,16 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Lib.Types where
 
 import Control.Monad.Trans.Reader
+import Data.Bifunctor
 import Data.Pool
 import Data.Text (Text)
 import Data.Time.Calendar.Month
 import Data.Time.Clock
-import Database.MongoDB
+import Database.MongoDB hiding (Oid)
 import Database.MongoDB qualified as M
 import GHC.Generics
 import Web.Scotty.Trans
@@ -23,8 +23,10 @@ type ConfigReader = ReaderT Config IO
 type ScottyM = ScottyT ConfigReader
 type ActionM = ActionT ConfigReader
 
-instance Parsable ObjectId where
-  parseParam = readEither
+newtype Oid = Oid ObjectId
+
+instance Parsable Oid where
+  parseParam = second Oid . readEither
 
 class FromDocument a where
   fromDocument :: Document -> a
