@@ -179,7 +179,7 @@ getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit pa
 
 runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (AppConfigReaderM m) b
 runDb dbname q = do
-  pool <- getPool <$> lift ask
+  pool <- lift $ asks getPool
   liftAndCatchIO $
     recoverAll limitedBackoff $
       const $ do
