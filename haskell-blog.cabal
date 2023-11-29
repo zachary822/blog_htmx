@@ -94,7 +94,10 @@ executable haskell-blog
                       unix,
                       time,
                       transformers,
-                      retry
+                      retry,
+                      katip,
+                      mtl,
+                      unliftio-core
 
     -- Directories containing source files.
     hs-source-dirs:   app

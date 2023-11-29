@@ -11,8 +11,7 @@ import Configuration.Dotenv (defaultConfig, loadFile, onMissingFile)
 import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
-import Control.Monad.Trans.Reader
+import Control.Monad.Reader
 import Control.Retry
 import Data.Either
 import Data.Functor ((<&>))
@@ -27,6 +26,7 @@ import Data.Time.Format
 import Data.Time.Format.ISO8601
 import Database.MongoDB hiding (Oid)
 import Database.MongoDB qualified as M
+import Katip
 import Lib.Blaze
 import Lib.Database
 import Lib.Middleware
@@ -40,6 +40,7 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.RequestLogger
 import System.Directory
 import System.Environment
+import System.IO
 import System.Posix.Files
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
@@ -177,7 +178,7 @@ getCurrentPage page = pageOffset page `div` pageLimit page + 1
 getMaxPage :: (Integral a, Integral b) => a -> Page -> b
 getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit page) :: Double)
 
-runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (AppConfigReaderM m) b
+runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (App m) b
 runDb dbname q = do
   pool <- lift $ asks getPool
   liftAndCatchIO $
@@ -203,276 +204,294 @@ main = do
 
   pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 5)
 
-  let f = flip runReaderT AppConfig{getPool = pool}
-      opts =
-        defaultOptions
-          { settings =
-              setHost (fromString webHost) . setPort (read webPort) $
-                settings defaultOptions
-          }
+  handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
+  let makeLogEnv =
+        registerScribe "stdout" handleScribe defaultScribeSettings
+          =<< initLogEnv "MyApp" "production"
 
-  scottySocketT' socketPath opts f $ do
-    middleware $
-      if debug
-        then logStdoutDev
-        else logStdout
+  bracket makeLogEnv closeScribes $ \le -> do
+    let config =
+          AppConfig
+            { getPool = pool
+            , logEnv = le
+            , logContext = mempty
+            , logNamespace = "main"
+            }
+    let f =
+          flip
+            runReaderT
+            config
+            . unApp
+    let opts =
+          defaultOptions
+            { settings =
+                setHost (fromString webHost) . setPort (read webPort) $
+                  settings defaultOptions
+            }
 
-    middleware rewriteHtmxPostsMiddleware
+    scottySocketT' socketPath opts f $ do
+      middleware $
+        if debug
+          then logStdoutDev
+          else logStdout
 
-    get "/posts/" $ do
-      page <- getPage
+      middleware rewriteHtmxPostsMiddleware
 
-      result <-
-        head
-          <$> runDb
-            "blog"
-            ( aggregate
-                "posts"
-                ( postsPipeline
-                    (pageLimit page)
-                    (pageOffset page)
-                )
-            )
+      get "/posts/" $ do
+        logLocT WarningS "yay!"
+        page <- getPage
 
-      let docs = M.at "data" result
+        result <-
+          head
+            <$> runDb
+              "blog"
+              ( aggregate
+                  "posts"
+                  ( postsPipeline
+                      (pageLimit page)
+                      (pageOffset page)
+                  )
+              )
 
-      when (null docs) $ raiseStatus status404 "no posts"
+        let docs = M.at "data" result
 
-      let total = getTotal result
-          curr = getCurrentPage page
-          maxPage = getMaxPage total page
+        when (null docs) $ raiseStatus status404 "no posts"
 
-      blazeHtml $ do
-        renderPosts docs
-        when (maxPage > 1) $
-          H.div H.! [classQQ| join |] $
-            forM_ [1 .. maxPage] $ \case
-              x
-                | x == curr ->
-                    H.button
-                      H.! A.class_ "join-item btn btn-active"
-                      $ H.toHtml (show curr)
-              o ->
-                H.button
-                  H.! A.class_ "join-item btn"
-                  H.! hx "push-url" "true"
-                  H.! hx "get" (fromString $ "/posts/?offset=" <> show (pred o * pageLimit page))
-                  H.! hx "target" "#posts"
-                  $ fromString (show o)
+        let total = getTotal result
+            curr = getCurrentPage page
+            maxPage = getMaxPage total page
 
-    get "/posts/:pid" $ do
-      Oid pid <- captureParam "pid"
+        blazeHtml $ do
+          renderPosts docs
+          when (maxPage > 1) $
+            H.div H.! [classQQ| join |] $
+              forM_ [1 .. maxPage] $ \case
+                x
+                  | x == curr ->
+                      H.button
+                        H.! A.class_ "join-item btn btn-active"
+                        $ H.toHtml (show curr)
+                o ->
+                  H.button
+                    H.! A.class_ "join-item btn"
+                    H.! hx "push-url" "true"
+                    H.! hx "get" (fromString $ "/posts/?offset=" <> show (pred o * pageLimit page))
+                    H.! hx "target" "#posts"
+                    $ fromString (show o)
 
-      runDb
-        "blog"
-        ( find (select (getPost pid) "posts") >>= M.rest
-        )
-        >>= \case
-          [] -> raiseStatus status404 "Not Found"
-          doc : _ -> blazeHtml $ do
-            postHtml $ fromDocument doc
+      get "/posts/:pid" $ do
+        Oid pid <- captureParam "pid"
 
-    get "/posts/summary" $ do
-      result <-
-        head
-          <$> runDb
-            "blog"
-            ( aggregate
-                "posts"
-                summaryPipeline
-            )
-
-      let summary = fromDocument result :: Summary
-
-      blazeHtml $ do
-        H.h2 "Months"
-        H.ul $
-          forM_ (monthly summary) $ \m -> do
-            H.li $ do
-              let month@(YearMonth y my) = summaryMonth m
-
-              H.a
-                H.! A.href "#"
-                H.! hx "push-url" "true"
-                H.! hx "target" "#posts"
-                H.! hx "get" (fromString $ concat ["/posts/months/", show y, "/", show my])
-                $ do
-                  fromString . show $ month
-                  " ("
-                  fromString . show $ monthCount m
-                  ")"
-        H.h2 "Tags"
-        H.ul $
-          forM_ (tags summary) $ \t -> do
-            H.li $ do
-              H.a
-                H.! A.href "#"
-                H.! hx "push-url" "true"
-                H.! hx "target" "#posts"
-                H.! hx "get" (fromString . T.unpack $ "/posts/tags/" <> tagName t)
-                $ do
-                  H.toHtml $ tagName t
-                  " ("
-                  fromString . show $ tagCount t
-                  ")"
-
-    get "/posts/tags/:tag" $ do
-      tag :: Text <- captureParam "tag"
-      when (T.null tag) $ raiseStatus status404 "empty tag"
-
-      page <- getPage
-
-      result <-
-        head
-          <$> runDb
-            "blog"
-            ( aggregate
-                "posts"
-                ( postsTagPipline
-                    tag
-                    (pageLimit page)
-                    (pageOffset page)
-                )
-            )
-      let docs = M.at "data" result
-
-      when (null docs) $ raiseStatus status404 "no posts"
-
-      let total = getTotal result
-          curr = getCurrentPage page
-          maxPage = getMaxPage total page
-
-      blazeHtml $ do
-        renderPosts docs
-        when (maxPage > 1) $
-          H.div H.! [classQQ| join |] $
-            forM_ [1 .. maxPage] $ \case
-              x
-                | x == curr ->
-                    H.button
-                      H.! A.class_ "join-item btn btn-active"
-                      $ H.toHtml (show curr)
-              o ->
-                H.button
-                  H.! A.class_ "join-item btn"
-                  H.! hx
-                    "get"
-                    ( fromString . T.unpack $
-                        T.concat
-                          [ "/posts/tags/"
-                          , tag
-                          , "?offset="
-                          , T.pack $ show (pred o * pageLimit page)
-                          ]
-                    )
-                  H.! hx "push-url" "true"
-                  H.! hx "target" "#posts"
-                  $ fromString (show o)
-
-    get "/posts/months/:year/:month" $ do
-      year :: Int <- captureParam "year"
-      month :: Int <- captureParam "month"
-      page <- getPage
-
-      result <-
-        head
-          <$> runDb
-            "blog"
-            ( aggregate
-                "posts"
-                ( postsMonthPipline
-                    year
-                    month
-                    (pageLimit page)
-                    (pageOffset page)
-                )
-            )
-
-      let docs = M.at "data" result
-
-      when (null docs) $ raiseStatus status404 "no posts"
-
-      let total = getTotal result
-          curr = getCurrentPage page
-          maxPage = getMaxPage total page
-
-      blazeHtml $ do
-        renderPosts docs
-        when (maxPage > 1) $
-          H.div H.! [classQQ| join |] $
-            forM_ [1 .. maxPage] $ \case
-              x
-                | x == curr ->
-                    H.button
-                      H.! A.class_ "join-item btn btn-active"
-                      $ H.toHtml (show curr)
-              o ->
-                H.button
-                  H.! A.class_ "join-item btn"
-                  H.! hx
-                    "get"
-                    ( fromString . T.unpack $
-                        T.concat
-                          [ "/posts/months/"
-                          , T.pack $ show year
-                          , "/"
-                          , T.pack $ show month
-                          , "?offset="
-                          , T.pack $ show (pred o * pageLimit page)
-                          ]
-                    )
-                  H.! hx "push-url" "true"
-                  H.! hx "target" "#posts"
-                  $ fromString (show o)
-
-    get "/posts/search" $ do
-      page <- getPage
-      q <- T.strip <$> queryParam "q"
-      when (T.null q) $ redirect "/posts/"
-
-      docs <-
         runDb
           "blog"
-          ( aggregate
-              "posts"
-              ( postsSearchPipeline
-                  q
-                  (pageLimit page)
-                  (pageOffset page)
-              )
+          ( find (select (getPost pid) "posts") >>= M.rest
           )
-      if null docs
-        then blazeHtml $ do
-          H.div "No Results Found"
-        else blazeHtml $ do
-          renderPosts docs
+          >>= \case
+            [] -> raiseStatus status404 "Not Found"
+            doc : _ -> blazeHtml $ do
+              postHtml $ fromDocument doc
 
-    get "/posts/feed" $ do
-      posts :: [Post] <-
-        map fromDocument
-          <$> runDb
+      get "/posts/summary" $ do
+        result <-
+          head
+            <$> runDb
+              "blog"
+              ( aggregate
+                  "posts"
+                  summaryPipeline
+              )
+
+        let summary = fromDocument result :: Summary
+
+        blazeHtml $ do
+          H.h2 "Months"
+          H.ul $
+            forM_ (monthly summary) $ \m -> do
+              H.li $ do
+                let month@(YearMonth y my) = summaryMonth m
+
+                H.a
+                  H.! A.href "#"
+                  H.! hx "push-url" "true"
+                  H.! hx "target" "#posts"
+                  H.! hx "get" (fromString $ concat ["/posts/months/", show y, "/", show my])
+                  $ do
+                    fromString . show $ month
+                    " ("
+                    fromString . show $ monthCount m
+                    ")"
+          H.h2 "Tags"
+          H.ul $
+            forM_ (tags summary) $ \t -> do
+              H.li $ do
+                H.a
+                  H.! A.href "#"
+                  H.! hx "push-url" "true"
+                  H.! hx "target" "#posts"
+                  H.! hx "get" (fromString . T.unpack $ "/posts/tags/" <> tagName t)
+                  $ do
+                    H.toHtml $ tagName t
+                    " ("
+                    fromString . show $ tagCount t
+                    ")"
+
+      get "/posts/tags/:tag" $ do
+        tag :: Text <- captureParam "tag"
+        when (T.null tag) $ raiseStatus status404 "empty tag"
+
+        page <- getPage
+
+        result <-
+          head
+            <$> runDb
+              "blog"
+              ( aggregate
+                  "posts"
+                  ( postsTagPipline
+                      tag
+                      (pageLimit page)
+                      (pageOffset page)
+                  )
+              )
+        let docs = M.at "data" result
+
+        when (null docs) $ raiseStatus status404 "no posts"
+
+        let total = getTotal result
+            curr = getCurrentPage page
+            maxPage = getMaxPage total page
+
+        blazeHtml $ do
+          renderPosts docs
+          when (maxPage > 1) $
+            H.div H.! [classQQ| join |] $
+              forM_ [1 .. maxPage] $ \case
+                x
+                  | x == curr ->
+                      H.button
+                        H.! A.class_ "join-item btn btn-active"
+                        $ H.toHtml (show curr)
+                o ->
+                  H.button
+                    H.! A.class_ "join-item btn"
+                    H.! hx
+                      "get"
+                      ( fromString . T.unpack $
+                          T.concat
+                            [ "/posts/tags/"
+                            , tag
+                            , "?offset="
+                            , T.pack $ show (pred o * pageLimit page)
+                            ]
+                      )
+                    H.! hx "push-url" "true"
+                    H.! hx "target" "#posts"
+                    $ fromString (show o)
+
+      get "/posts/months/:year/:month" $ do
+        year :: Int <- captureParam "year"
+        month :: Int <- captureParam "month"
+        page <- getPage
+
+        result <-
+          head
+            <$> runDb
+              "blog"
+              ( aggregate
+                  "posts"
+                  ( postsMonthPipline
+                      year
+                      month
+                      (pageLimit page)
+                      (pageOffset page)
+                  )
+              )
+
+        let docs = M.at "data" result
+
+        when (null docs) $ raiseStatus status404 "no posts"
+
+        let total = getTotal result
+            curr = getCurrentPage page
+            maxPage = getMaxPage total page
+
+        blazeHtml $ do
+          renderPosts docs
+          when (maxPage > 1) $
+            H.div H.! [classQQ| join |] $
+              forM_ [1 .. maxPage] $ \case
+                x
+                  | x == curr ->
+                      H.button
+                        H.! A.class_ "join-item btn btn-active"
+                        $ H.toHtml (show curr)
+                o ->
+                  H.button
+                    H.! A.class_ "join-item btn"
+                    H.! hx
+                      "get"
+                      ( fromString . T.unpack $
+                          T.concat
+                            [ "/posts/months/"
+                            , T.pack $ show year
+                            , "/"
+                            , T.pack $ show month
+                            , "?offset="
+                            , T.pack $ show (pred o * pageLimit page)
+                            ]
+                      )
+                    H.! hx "push-url" "true"
+                    H.! hx "target" "#posts"
+                    $ fromString (show o)
+
+      get "/posts/search" $ do
+        page <- getPage
+        q <- T.strip <$> queryParam "q"
+        when (T.null q) $ redirect "/posts/"
+
+        docs <-
+          runDb
             "blog"
             ( aggregate
                 "posts"
-                ( postsPipeline'
-                    (10 :: Int)
-                    (0 :: Int)
+                ( postsSearchPipeline
+                    q
+                    (pageLimit page)
+                    (pageOffset page)
                 )
             )
+        if null docs
+          then blazeHtml $ do
+            H.div "No Results Found"
+          else blazeHtml $ do
+            renderPosts docs
 
-      rssXml $ do
-        xmlHeader
-        rss . channel $ do
-          title "ThoughtBank Blog"
-          link "http://localhost:5173"
-          atomLink RA.! RA.href "http://localhost:5173/posts/feed" RA.! RA.rel "self"
-          description "Thoughts and concerns from my programming journey."
-          language "en-us"
-          forM_ posts $ \p -> item $ do
-            let l = toRss $ "http://localhost:5173/posts/" <> show (postId p)
+      get "/posts/feed" $ do
+        posts :: [Post] <-
+          map fromDocument
+            <$> runDb
+              "blog"
+              ( aggregate
+                  "posts"
+                  ( postsPipeline'
+                      (10 :: Int)
+                      (0 :: Int)
+                  )
+              )
 
-            title . toRss $ postTitle p
-            pubDate . toRss . formatTime defaultTimeLocale "%a, %d %b %Y %R %z" $ postUpdated p
-            link l
-            guid l
-            description . cdata . mdToHtml $ postBody p
+        rssXml $ do
+          xmlHeader
+          rss . channel $ do
+            title "ThoughtBank Blog"
+            link "http://localhost:5173"
+            atomLink RA.! RA.href "http://localhost:5173/posts/feed" RA.! RA.rel "self"
+            description "Thoughts and concerns from my programming journey."
+            language "en-us"
+            forM_ posts $ \p -> item $ do
+              let l = toRss $ "http://localhost:5173/posts/" <> show (postId p)
+
+              title . toRss $ postTitle p
+              pubDate . toRss . formatTime defaultTimeLocale "%a, %d %b %Y %R %z" $ postUpdated p
+              link l
+              guid l
+              description . cdata . mdToHtml $ postBody p

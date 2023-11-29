@@ -4,7 +4,8 @@
 
 module Lib.Types where
 
-import Control.Monad.Trans.Reader
+import Control.Monad.IO.Unlift
+import Control.Monad.Reader
 import Data.Bifunctor
 import Data.Pool
 import Data.Text (Text)
@@ -13,16 +14,38 @@ import Data.Time.Clock
 import Database.MongoDB hiding (Oid)
 import Database.MongoDB qualified as M
 import GHC.Generics
+import Katip qualified as K
 import Web.Scotty.Trans
 
-newtype AppConfig = AppConfig
+data AppConfig = AppConfig
   { getPool :: Pool Pipe
+  , logNamespace :: K.Namespace
+  , logContext :: K.LogContexts
+  , logEnv :: K.LogEnv
   }
 
-type AppConfigReaderM m = ReaderT AppConfig m
+newtype App m a = App
+  { unApp :: ReaderT AppConfig m a
+  }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader AppConfig, MonadUnliftIO)
+
+instance (MonadIO m) => K.Katip (App m) where
+  getLogEnv = asks logEnv
+  localLogEnv f (App m) = App (local (\s -> s{logEnv = f (logEnv s)}) m)
+
+instance (MonadIO m) => K.KatipContext (App m) where
+  getKatipContext = asks logContext
+  localKatipContext f (App m) = App (local (\s -> s{logContext = f (logContext s)}) m)
+  getKatipNamespace = asks logNamespace
+  localKatipNamespace f (App m) = App (local (\s -> s{logNamespace = f (logNamespace s)}) m)
+
+type AppConfigReaderM m = App m
 type AppConfigReader = AppConfigReaderM IO
 type ScottyM = ScottyT AppConfigReader
 type ActionM = ActionT AppConfigReader
+
+logLocT :: K.Severity -> K.LogStr -> ActionM ()
+logLocT = (lift .) . K.logLocM
 
 newtype Oid = Oid ObjectId
 
