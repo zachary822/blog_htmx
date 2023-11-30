@@ -8,7 +8,7 @@
 module Main where
 
 import Configuration.Dotenv (defaultConfig, loadFile, onMissingFile)
-import Control.Exception
+import Control.Exception (SomeException, bracket)
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
@@ -24,7 +24,7 @@ import Data.Text qualified as T
 import Data.Time.Calendar.Month
 import Data.Time.Format
 import Data.Time.Format.ISO8601
-import Database.MongoDB hiding (Oid)
+import Database.MongoDB hiding (Oid, next)
 import Database.MongoDB qualified as M
 import GHC.IO (unsafePerformIO)
 import Katip
@@ -248,18 +248,25 @@ main = do
 
     logger <- f askLoggerIO
 
-    let logRequest =
+    let destination = Callback $ logger InfoS . logStr . FLogStr
+        logRequest =
           unsafePerformIO $
             mkRequestLogger
               def
                 { outputFormat = Apache FromSocket
-                , destination = Callback $ logger InfoS . logStr . FLogStr
+                , destination = destination
+                }
+        logRequestDev =
+          unsafePerformIO $
+            mkRequestLogger
+              def
+                { destination = destination
                 }
 
     scottySocketT' socketPath opts f $ do
       middleware $
         if debug
-          then logStdoutDev
+          then logRequestDev
           else logRequest
 
       middleware rewriteHtmxPostsMiddleware
