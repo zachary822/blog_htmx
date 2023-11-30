@@ -98,7 +98,8 @@ executable haskell-blog
                       katip,
                       mtl,
                       unliftio-core,
-                      fast-logger
+                      fast-logger,
+                      string-conv
 
     -- Directories containing source files.
     hs-source-dirs:   app

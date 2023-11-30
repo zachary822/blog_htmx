@@ -10,13 +10,16 @@ import Control.Monad.Reader
 import Control.Retry
 import Data.Bifunctor
 import Data.Pool
+import Data.String.Conv
 import Data.Text (Text)
+import Data.Text.Encoding (decodeUtf8)
 import Data.Time.Calendar.Month
 import Data.Time.Clock
 import Database.MongoDB hiding (Oid)
 import Database.MongoDB qualified as M
 import GHC.Generics
 import Katip qualified as K
+import System.Log.FastLogger qualified as FL
 import Web.Scotty.Trans
 
 data AppConfig = AppConfig
@@ -47,6 +50,13 @@ type ActionM m = ActionT (AppConfigReaderM m)
 
 logLocT :: (MonadIO m) => K.Severity -> K.LogStr -> ActionT (App m) ()
 logLocT = (lift .) . K.logLocM
+
+newtype FLogStr = FLogStr
+  { unFLogStr :: FL.LogStr
+  }
+
+instance StringConv FLogStr Text where
+  strConv _ = decodeUtf8 . FL.fromLogStr . unFLogStr
 
 newtype Oid = Oid ObjectId
 

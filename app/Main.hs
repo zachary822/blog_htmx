@@ -43,7 +43,6 @@ import Network.Wai.Middleware.RequestLogger
 import System.Directory
 import System.Environment
 import System.IO
-import System.Log.FastLogger (fromLogStr)
 import System.Posix.Files
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
@@ -247,14 +246,14 @@ main = do
                   settings defaultOptions
             }
 
-    logger <- runKatipContextT le (logContext config) (logNamespace config) askLoggerIO
+    logger <- f askLoggerIO
 
     let logRequest =
           unsafePerformIO $
             mkRequestLogger
               def
                 { outputFormat = Apache FromSocket
-                , destination = Callback $ logger InfoS . logStr . fromLogStr
+                , destination = Callback $ logger InfoS . logStr . FLogStr
                 }
 
     scottySocketT' socketPath opts f $ do
