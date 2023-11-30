@@ -27,6 +27,7 @@ import Data.Time.Format.ISO8601
 import Database.MongoDB hiding (Oid)
 import Database.MongoDB qualified as M
 import Katip
+import Katip.Monadic (askLoggerIO)
 import Lib.Blaze
 import Lib.Database
 import Lib.Middleware
@@ -65,7 +66,7 @@ isDebug =
     Just "1" -> True
     _ -> False
 
-isHxRequest :: ActionM Bool
+isHxRequest :: (MonadIO m) => ActionM m Bool
 isHxRequest =
   header "hx-request" <&> \case
     Just "true" -> True
@@ -85,7 +86,13 @@ mdToHtml =
           <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
       )
 
-scottySocketT' :: Maybe FilePath -> Options -> (AppConfigReader Response -> IO Response) -> ScottyM () -> IO ()
+scottySocketT' ::
+  (MonadIO m) =>
+  Maybe FilePath ->
+  Options ->
+  (AppConfigReaderM m Response -> IO Response) ->
+  ScottyM m () ->
+  IO ()
 scottySocketT' mpath opts pool app = case mpath of
   Nothing -> do
     scottyOptsT opts pool app
@@ -99,10 +106,10 @@ scottySocketT' mpath opts pool app = case mpath of
       listen sock maxListenQueue
       scottySocketT opts sock pool app
 
-returnDefault :: a -> StatusError -> ActionM a
+returnDefault :: a -> StatusError -> ActionM IO a
 returnDefault a = const (return a)
 
-getPage :: ActionM Page
+getPage :: ActionM IO Page
 getPage = do
   pageLimit <- queryParam "limit" `rescue` returnDefault 10
   pageOffset <- queryParam "offset" `rescue` returnDefault 0
@@ -181,11 +188,19 @@ getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit pa
 runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (App m) b
 runDb dbname q = do
   pool <- lift $ asks getPool
-  liftAndCatchIO $
-    recoverAll limitedBackoff $
-      const $ do
-        withResource pool $ \p ->
-          access p master dbname q
+  logger <- lift askLoggerIO
+
+  liftAndCatchIO
+    $ recovering
+      limitedBackoff
+      [ logRetries
+          (\(_ :: SomeException) -> return True)
+          (\a b c -> logger WarningS $ logStr (defaultLogMsg a b c))
+      ]
+    $ const
+    $ do
+      withResource pool $ \p ->
+        access p master dbname q
 
 main :: IO ()
 main = do
@@ -238,7 +253,6 @@ main = do
       middleware rewriteHtmxPostsMiddleware
 
       get "/posts/" $ do
-        logLocT WarningS "yay!"
         page <- getPage
 
         result <-

@@ -2,6 +2,7 @@
 
 module Lib.Rss where
 
+import Control.Monad.IO.Class
 import Data.String
 import Lib.Types
 import Text.Blaze
@@ -14,7 +15,7 @@ type RSS = Markup
 toRss :: (ToMarkup a) => a -> RSS
 toRss = toMarkup
 
-rssXml :: RSS -> ActionM ()
+rssXml :: (MonadIO m) => RSS -> ActionM m ()
 rssXml r = do
   setHeader "Content-Type" "application/rss+xml"
   raw . renderMarkup $ r

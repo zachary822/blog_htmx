@@ -97,7 +97,8 @@ executable haskell-blog
                       retry,
                       katip,
                       mtl,
-                      unliftio-core
+                      unliftio-core,
+                      exceptions
 
     -- Directories containing source files.
     hs-source-dirs:   app

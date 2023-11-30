@@ -4,6 +4,7 @@
 
 module Lib.Blaze where
 
+import Control.Monad.IO.Class
 import Data.String
 import Language.Haskell.TH.Quote
 import Lib.Types
@@ -22,7 +23,7 @@ classQQ =
     , quoteType = error "not supported"
     }
 
-blazeHtml :: Html -> ActionM ()
+blazeHtml :: (MonadIO m) => Html -> ActionM m ()
 blazeHtml h = do
   setHeader "Content-Type" "text/html; charset=utf-8"
   raw . renderHtml $ h

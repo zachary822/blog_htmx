@@ -3,15 +3,11 @@
 module Lib.Database where
 
 import Control.Monad
-import Control.Retry
 import Data.Maybe
 import Data.Text (Text)
 import Data.Text qualified as T
 import Database.MongoDB
 import Network.URI
-
-limitedBackoff :: RetryPolicyM IO
-limitedBackoff = exponentialBackoff 50000 <> limitRetries 5
 
 getDbInfo :: String -> (String, Username, Password)
 getDbInfo uri = fromJust $ do
@@ -28,11 +24,7 @@ getDbInfo uri = fromJust $ do
 getPipe :: ReplicaSet -> Username -> Password -> IO Pipe
 getPipe rs uname passwd = do
   pipe <- primary rs
-  _ <-
-    retrying
-      limitedBackoff
-      (\_ b -> return $ not b)
-      $ const (access pipe master admin (auth uname passwd))
+  _ <- access pipe master admin (auth uname passwd)
   return pipe
 
 -- pipelines

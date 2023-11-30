@@ -4,8 +4,10 @@
 
 module Lib.Types where
 
+import Control.Monad.IO.Class
 import Control.Monad.IO.Unlift
 import Control.Monad.Reader
+import Control.Retry
 import Data.Bifunctor
 import Data.Pool
 import Data.Text (Text)
@@ -40,11 +42,10 @@ instance (MonadIO m) => K.KatipContext (App m) where
   localKatipNamespace f (App m) = App (local (\s -> s{logNamespace = f (logNamespace s)}) m)
 
 type AppConfigReaderM m = App m
-type AppConfigReader = AppConfigReaderM IO
-type ScottyM = ScottyT AppConfigReader
-type ActionM = ActionT AppConfigReader
+type ScottyM m = ScottyT (AppConfigReaderM m)
+type ActionM m = ActionT (AppConfigReaderM m)
 
-logLocT :: K.Severity -> K.LogStr -> ActionM ()
+logLocT :: (MonadIO m) => K.Severity -> K.LogStr -> ActionT (App m) ()
 logLocT = (lift .) . K.logLocM
 
 newtype Oid = Oid ObjectId
@@ -119,3 +120,6 @@ data Page = Page
   , pageOffset :: Integer
   }
   deriving (Show, Eq)
+
+limitedBackoff :: (MonadIO m) => RetryPolicyM m
+limitedBackoff = exponentialBackoff 50000 <> limitRetries 5
