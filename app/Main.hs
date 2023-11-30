@@ -188,7 +188,8 @@ getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit pa
 runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (App m) b
 runDb dbname q = do
   pool <- lift $ asks getPool
-  logger <- lift askLoggerIO
+
+  logger <- lift $ katipAddNamespace "runDb" askLoggerIO
 
   liftAndCatchIO
     $ recovering
