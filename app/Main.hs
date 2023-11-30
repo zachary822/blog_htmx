@@ -26,6 +26,7 @@ import Data.Time.Format
 import Data.Time.Format.ISO8601
 import Database.MongoDB hiding (Oid)
 import Database.MongoDB qualified as M
+import GHC.IO (unsafePerformIO)
 import Katip
 import Katip.Monadic (askLoggerIO)
 import Lib.Blaze
@@ -42,6 +43,7 @@ import Network.Wai.Middleware.RequestLogger
 import System.Directory
 import System.Environment
 import System.IO
+import System.Log.FastLogger (fromLogStr)
 import System.Posix.Files
 import Text.Blaze.Html5 (Html)
 import Text.Blaze.Html5 qualified as H
@@ -245,11 +247,21 @@ main = do
                   settings defaultOptions
             }
 
+    logger <- runKatipContextT le (logContext config) (logNamespace config) askLoggerIO
+
+    let logRequest =
+          unsafePerformIO $
+            mkRequestLogger
+              def
+                { outputFormat = Apache FromSocket
+                , destination = Callback $ logger InfoS . logStr . fromLogStr
+                }
+
     scottySocketT' socketPath opts f $ do
       middleware $
         if debug
           then logStdoutDev
-          else logStdout
+          else logRequest
 
       middleware rewriteHtmxPostsMiddleware
 
