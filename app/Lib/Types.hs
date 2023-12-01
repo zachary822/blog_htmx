@@ -11,7 +11,7 @@ import Control.Retry
 import Data.Bifunctor
 import Data.Pool
 import Data.String.Conv
-import Data.Text (Text)
+import Data.Text (Text, stripEnd)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Time.Calendar.Month
 import Data.Time.Clock
@@ -56,7 +56,7 @@ newtype FLogStr = FLogStr
   }
 
 instance StringConv FLogStr Text where
-  strConv _ = decodeUtf8 . FL.fromLogStr . unFLogStr
+  strConv _ = stripEnd . decodeUtf8 . FL.fromLogStr . unFLogStr
 
 newtype Oid = Oid ObjectId
 

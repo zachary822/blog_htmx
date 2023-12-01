@@ -66,7 +66,8 @@ executable haskell-blog
                       Lib.Rss,
                       Lib.Rss.Attributes,
                       Lib.Middleware,
-                      Lib.Types
+                      Lib.Types,
+                      Lib.Utils
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -99,7 +100,8 @@ executable haskell-blog
                       mtl,
                       unliftio-core,
                       fast-logger,
-                      string-conv
+                      string-conv,
+                      data-default
 
     -- Directories containing source files.
     hs-source-dirs:   app
