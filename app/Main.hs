@@ -493,11 +493,12 @@ main = do
                     (pageOffset page)
                 )
             )
-        if null docs
-          then blazeHtml $ do
-            H.div "No Results Found"
-          else blazeHtml $ do
-            renderPosts docs
+        blazeHtml $ do
+          if null docs
+            then do
+              H.div "No Results Found"
+            else do
+              renderPosts docs
 
       get "/posts/feed" $ do
         posts :: [Post] <-
