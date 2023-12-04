@@ -17,6 +17,7 @@ import Data.Pool
 import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Lazy qualified as TL
 import Data.Time.Calendar.Month
 import Database.MongoDB hiding (Oid, next)
 import Database.MongoDB qualified as M
@@ -111,6 +112,10 @@ main = do
           else logRequest
 
       middleware rewriteHtmxPostsMiddleware
+
+      get "/healthcheck" $ do
+        ver <- runDb "blog" serverVersion
+        text $ TL.fromStrict ver
 
       get "/posts/" $ do
         page <- getPage

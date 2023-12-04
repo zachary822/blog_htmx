@@ -7,7 +7,7 @@ services:
       - MONGODB_URI
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/posts/summary"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthcheck"]
       interval: 1m30s
       timeout: 10s
       retries: 3
