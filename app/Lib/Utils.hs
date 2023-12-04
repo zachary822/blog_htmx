@@ -74,7 +74,15 @@ mdToHtml w =
     . runPure
     . ( writeHtml5 def{writerExtensions = extensionsFromList [Ext_raw_html]}
           <=< w
-          <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
+          <=< readMarkdown
+            def
+              { readerExtensions =
+                  extensionsFromList
+                    [ Ext_backtick_code_blocks
+                    , Ext_raw_html
+                    , Ext_auto_identifiers
+                    ]
+              }
       )
 
 scottySocketT' ::
