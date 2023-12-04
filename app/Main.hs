@@ -12,7 +12,6 @@ import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.Reader
 import Data.Default (def)
-import Data.Maybe
 import Data.Pool
 import Data.String (fromString)
 import Data.Text (Text)
@@ -48,11 +47,11 @@ main = do
   debug <- isDebug
 
   dburi <- getEnv "MONGODB_URI"
-  webHost <- fromMaybe "*" <$> lookupEnv "HOST"
-  webPort <- fromMaybe "3000" <$> lookupEnv "PORT"
+  webHost <- maybe "*" fromString <$> lookupEnv "HOST"
+  webPort <- maybe 3000 read <$> lookupEnv "PORT"
   socketPath :: Maybe FilePath <- lookupEnv "SOCKET"
   -- logging
-  sev :: Severity <- read . fromMaybe "InfoS" <$> lookupEnv "SEVERITY"
+  sev :: Severity <- maybe InfoS read <$> lookupEnv "SEVERITY"
   logFile :: Maybe FilePath <- lookupEnv "LOG_FILE"
 
   let (dbhost, uname, passwd) = getDbInfo dburi
@@ -85,7 +84,7 @@ main = do
     let opts =
           defaultOptions
             { settings =
-                setHost (fromString webHost) . setPort (read webPort) $
+                setHost webHost . setPort webPort $
                   settings defaultOptions
             }
 
