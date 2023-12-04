@@ -6,8 +6,9 @@ services:
     environment:
       - MONGODB_URI
     restart: always
-    healthcheck: ["CMD", "curl", "http://localhost:3000"]
-    interval: 1m30s
-    timeout: 10s
-    retries: 3
-    start_period: 2m
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/posts/summary"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 2m
