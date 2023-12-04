@@ -138,9 +138,9 @@ postHtml p = H.article
       let pid = show $ postId p
       H.a
         H.! A.id (fromString $ "posts:" <> pid)
-        H.! hx "get" (fromString $ "/posts/" <> pid)
-        H.! hx "push-url" "true"
-        H.! hx "target" "#posts"
+        H.! hx Get (fromString $ "/posts/" <> pid)
+        H.! hx PushUrl "true"
+        H.! hx Target "#posts"
         $ do
           H.h1 $ H.toHtml (postTitle p)
       H.div H.! [classQQ| mt-0 mb-1 text-sm |] $ do
@@ -153,8 +153,9 @@ postHtml p = H.article
         forM_ (postTags p) $ \t -> do
           H.button
             H.! [classQQ| badge badge-neutral |]
-            H.! hx "target" "#posts"
-            H.! hx "get" (fromString . T.unpack $ "/posts/tags/" <> t)
+            H.! hx Target "#posts"
+            H.! hx Get (fromString . T.unpack $ "/posts/tags/" <> t)
+            H.! hx PushUrl "true"
             $ H.toHtml t
     mdToHtml (walkM formatLink) $ postBody p
 

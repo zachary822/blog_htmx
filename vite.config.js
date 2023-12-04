@@ -6,6 +6,10 @@ import { resolve } from "path";
 const config = {
   server: {
     proxy: {
+      "/posts/feed": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
       "/posts": {
         target: "http://localhost:3000",
         changeOrigin: true,

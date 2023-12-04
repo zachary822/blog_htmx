@@ -28,5 +28,16 @@ blazeHtml h = do
   setHeader "Content-Type" "text/html; charset=utf-8"
   raw . renderHtml $ h
 
-hx :: String -> AttributeValue -> Attribute
-hx attr = H.customAttribute (fromString $ "hx-" <> attr)
+data HxAttribute
+  = Get
+  | Target
+  | PushUrl
+  deriving (Read)
+
+instance Show HxAttribute where
+  show Get = "get"
+  show Target = "target"
+  show PushUrl = "push-url"
+
+hx :: HxAttribute -> AttributeValue -> Attribute
+hx attr = H.customAttribute (fromString $ "hx-" <> show attr)

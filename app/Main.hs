@@ -154,9 +154,9 @@ main = do
                 o ->
                   H.button
                     H.! A.class_ "join-item btn"
-                    H.! hx "push-url" "true"
-                    H.! hx "get" (fromString $ "/posts/?offset=" <> show (pred o * pageLimit page))
-                    H.! hx "target" "#posts"
+                    H.! hx PushUrl "true"
+                    H.! hx Get (fromString $ "/posts/?offset=" <> show (pred o * pageLimit page))
+                    H.! hx Target "#posts"
                     $ fromString (show o)
 
       get "/posts/:pid" $ do
@@ -192,9 +192,9 @@ main = do
 
                 H.a
                   H.! A.href "#"
-                  H.! hx "push-url" "true"
-                  H.! hx "target" "#posts"
-                  H.! hx "get" (fromString $ concat ["/posts/months/", show y, "/", show my])
+                  H.! hx PushUrl "true"
+                  H.! hx Target "#posts"
+                  H.! hx Get (fromString $ concat ["/posts/months/", show y, "/", show my])
                   $ do
                     fromString . show $ month
                     " ("
@@ -206,9 +206,9 @@ main = do
               H.li $ do
                 H.a
                   H.! A.href "#"
-                  H.! hx "push-url" "true"
-                  H.! hx "target" "#posts"
-                  H.! hx "get" (fromString . T.unpack $ "/posts/tags/" <> tagName t)
+                  H.! hx PushUrl "true"
+                  H.! hx Target "#posts"
+                  H.! hx Get (fromString . T.unpack $ "/posts/tags/" <> tagName t)
                   $ do
                     H.toHtml $ tagName t
                     " ("
@@ -255,7 +255,7 @@ main = do
                   H.button
                     H.! A.class_ "join-item btn"
                     H.! hx
-                      "get"
+                      Get
                       ( fromString . T.unpack $
                           T.concat
                             [ "/posts/tags/"
@@ -264,8 +264,8 @@ main = do
                             , T.pack $ show (pred o * pageLimit page)
                             ]
                       )
-                    H.! hx "push-url" "true"
-                    H.! hx "target" "#posts"
+                    H.! hx PushUrl "true"
+                    H.! hx Target "#posts"
                     $ fromString (show o)
 
       get "/posts/months/:year/:month" $ do
@@ -309,7 +309,7 @@ main = do
                   H.button
                     H.! A.class_ "join-item btn"
                     H.! hx
-                      "get"
+                      Get
                       ( fromString . T.unpack $
                           T.concat
                             [ "/posts/months/"
@@ -320,8 +320,8 @@ main = do
                             , T.pack $ show (pred o * pageLimit page)
                             ]
                       )
-                    H.! hx "push-url" "true"
-                    H.! hx "target" "#posts"
+                    H.! hx PushUrl "true"
+                    H.! hx Target "#posts"
                     $ fromString (show o)
 
       get "/posts/search" $ do
