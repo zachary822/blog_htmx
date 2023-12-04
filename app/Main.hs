@@ -49,6 +49,9 @@ main = do
   webHost <- fromMaybe "*" <$> lookupEnv "HOST"
   webPort <- fromMaybe "3000" <$> lookupEnv "PORT"
   socketPath :: Maybe FilePath <- lookupEnv "SOCKET"
+  -- logging
+  sev :: Severity <- read . fromMaybe "InfoS" <$> lookupEnv "SEVERITY"
+  logFile :: Maybe FilePath <- lookupEnv "LOG_FILE"
 
   let (dbhost, uname, passwd) = getDbInfo dburi
 
@@ -56,10 +59,13 @@ main = do
 
   pool <- newPool (defaultPoolConfig (getPipe rs uname passwd) M.close 10 5)
 
-  handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V2
+  stdoutScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem sev) V2
+  fileScribe <- maybe mempty (\p -> mkFileScribe p (permitItem sev) V2) logFile
+
   let makeLogEnv =
-        registerScribe "stdout" handleScribe defaultScribeSettings
-          =<< initLogEnv "MyApp" "production"
+        initLogEnv "MyApp" "production"
+          >>= registerScribe "stdout" stdoutScribe defaultScribeSettings
+          >>= registerScribe "logFile" fileScribe defaultScribeSettings
 
   bracket makeLogEnv closeScribes $ \le -> do
     let config =
