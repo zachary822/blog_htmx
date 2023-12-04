@@ -6,15 +6,12 @@
 
 module Lib.Utils where
 
-import Control.Exception (SomeException, bracket)
+import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.IO.Class
-import Control.Monad.Reader
-import Control.Retry
 import Data.Either
 import Data.Functor ((<&>))
 import Data.List (intersperse)
-import Data.Pool
 import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -23,8 +20,6 @@ import Data.Time.Format
 import Data.Time.Format.ISO8601
 import Database.MongoDB hiding (Oid, next)
 import Database.MongoDB qualified as M
-import Katip
-import Katip.Monadic (askLoggerIO)
 import Lib.Blaze
 import Lib.Types
 import Network.Socket as S
@@ -38,6 +33,7 @@ import Text.Blaze.Html5.Attributes qualified as A
 import Text.Pandoc (
   Extension (..),
   Inline (..),
+  PandocPure,
   ReaderOptions (..),
   WriterOptions (..),
   def,
@@ -46,6 +42,7 @@ import Text.Pandoc (
   runPure,
   writeHtml5,
  )
+import Text.Pandoc.Definition (Pandoc)
 import Text.Pandoc.Walk
 import Web.Scotty.Trans
 
@@ -66,12 +63,17 @@ formatLink (Link (id_, cls, attrs) content target) = do
   return $ Link (id_, cls, ("rel", "noopener noreferrer") : ("target", "_blank") : attrs) content target
 formatLink a = return a
 
-mdToHtml :: Text -> Html
-mdToHtml =
+formatFeedLink :: (Monad m) => Inline -> m Inline
+formatFeedLink (Link (id_, cls, attr) content (url, title)) = do
+  return (Link (id_, cls, attr) content (url, title))
+formatFeedLink a = return a
+
+mdToHtml :: (Pandoc -> PandocPure Pandoc) -> Text -> Html
+mdToHtml w =
   fromRight mempty
     . runPure
     . ( writeHtml5 def{writerExtensions = extensionsFromList [Ext_raw_html]}
-          <=< walkM formatLink
+          <=< w
           <=< readMarkdown def{readerExtensions = extensionsFromList [Ext_backtick_code_blocks, Ext_raw_html]}
       )
 
@@ -154,7 +156,7 @@ postHtml p = H.article
             H.! hx "target" "#posts"
             H.! hx "get" (fromString . T.unpack $ "/posts/tags/" <> t)
             $ H.toHtml t
-    mdToHtml $ postBody p
+    mdToHtml (walkM formatLink) $ postBody p
 
 divider :: Html
 divider = H.div H.! A.class_ "divider" $ mempty
@@ -173,24 +175,6 @@ getCurrentPage page = pageOffset page `div` pageLimit page + 1
 
 getMaxPage :: (Integral a, Integral b) => a -> Page -> b
 getMaxPage total page = ceiling (fromIntegral total / fromIntegral (pageLimit page) :: Double)
-
-runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (App m) b
-runDb dbname q = do
-  pool <- lift $ asks getPool
-
-  logger <- lift $ katipAddNamespace "runDb" askLoggerIO
-
-  liftAndCatchIO
-    $ recovering
-      limitedBackoff
-      [ logRetries
-          (\(_ :: SomeException) -> return True)
-          (\a b c -> logger WarningS $ logStr (defaultLogMsg a b c))
-      ]
-    $ const
-    $ do
-      withResource pool $ \p ->
-        access p master dbname q
 
 formatRfc822Gmt :: UTCTime -> String
 formatRfc822Gmt = formatTime defaultTimeLocale "%a, %d %b %Y %R GMT"

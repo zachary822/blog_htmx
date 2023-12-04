@@ -2,12 +2,21 @@
 
 module Lib.Database where
 
+import Control.Exception (SomeException)
 import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Reader
+import Control.Retry
 import Data.Maybe
+import Data.Pool
 import Data.Text (Text)
 import Data.Text qualified as T
 import Database.MongoDB
+import Katip
+import Katip.Monadic (askLoggerIO)
+import Lib.Types
 import Network.URI
+import Web.Scotty.Trans
 
 getDbInfo :: String -> (String, Username, Password)
 getDbInfo uri = fromJust $ do
@@ -26,6 +35,24 @@ getPipe rs uname passwd = do
   pipe <- primary rs
   _ <- access pipe master admin (auth uname passwd)
   return pipe
+
+runDb :: (MonadIO m) => Database -> Action IO b -> ActionT (App m) b
+runDb dbname q = do
+  pool <- lift $ asks getPool
+
+  logger <- lift $ katipAddNamespace "runDb" askLoggerIO
+
+  liftAndCatchIO
+    $ recovering
+      limitedBackoff
+      [ logRetries
+          (\(_ :: SomeException) -> return True)
+          (\a b c -> logger WarningS $ logStr (defaultLogMsg a b c))
+      ]
+    $ const
+    $ do
+      withResource pool $ \p ->
+        access p master dbname q
 
 -- pipelines
 postsPipeline' :: (Val v0, Val v1) => v0 -> v1 -> [Document]

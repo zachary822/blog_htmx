@@ -38,6 +38,7 @@ import System.Environment
 import System.IO
 import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
+import Text.Pandoc.Walk
 import Web.Scotty.Trans
 
 main :: IO ()
@@ -374,4 +375,4 @@ main = do
               pubDate . toRss . formatRfc822Gmt $ postUpdated p
               link l
               guid l
-              description . cdata . mdToHtml $ postBody p
+              description . cdata . mdToHtml (walkM formatLink) $ postBody p
