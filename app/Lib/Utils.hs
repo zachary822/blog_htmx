@@ -32,6 +32,7 @@ import Text.Blaze.Html5 qualified as H
 import Text.Blaze.Html5.Attributes qualified as A
 import Text.Pandoc (
   Extension (..),
+  HTMLMathMethod (..),
   Inline (..),
   PandocPure,
   ReaderOptions (..),
@@ -72,7 +73,15 @@ mdToHtml :: (Pandoc -> PandocPure Pandoc) -> Text -> Html
 mdToHtml w =
   fromRight mempty
     . runPure
-    . ( writeHtml5 def{writerExtensions = extensionsFromList [Ext_raw_html]}
+    . ( writeHtml5
+          def
+            { writerExtensions =
+                extensionsFromList
+                  [ Ext_raw_html
+                  , Ext_tex_math_dollars
+                  ]
+            , writerHTMLMathMethod = MathML
+            }
           <=< w
           <=< readMarkdown
             def
@@ -81,6 +90,7 @@ mdToHtml w =
                     [ Ext_backtick_code_blocks
                     , Ext_raw_html
                     , Ext_auto_identifiers
+                    , Ext_tex_math_dollars
                     ]
               }
       )
