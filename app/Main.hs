@@ -195,12 +195,13 @@ main = do
             forM_ (monthly summary) $ \m -> do
               H.li $ do
                 let month@(YearMonth y my) = summaryMonth m
+                    monthUrl = fromString $ concat ["/posts/months/", show y, "/", show my]
 
                 H.a
-                  H.! A.href "#"
+                  H.! A.href monthUrl
+                  H.! hx Get monthUrl
                   H.! hx PushUrl "true"
                   H.! hx Target "#posts"
-                  H.! hx Get (fromString $ concat ["/posts/months/", show y, "/", show my])
                   $ do
                     fromString . show $ month
                     " ("
@@ -210,11 +211,12 @@ main = do
           H.ul $
             forM_ (tags summary) $ \t -> do
               H.li $ do
+                let tagUrl = fromString . T.unpack $ "/posts/tags/" <> tagName t
                 H.a
-                  H.! A.href "#"
+                  H.! A.href tagUrl
                   H.! hx PushUrl "true"
                   H.! hx Target "#posts"
-                  H.! hx Get (fromString . T.unpack $ "/posts/tags/" <> tagName t)
+                  H.! hx Get tagUrl
                   $ do
                     H.toHtml $ tagName t
                     " ("

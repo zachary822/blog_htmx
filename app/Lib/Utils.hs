@@ -10,7 +10,6 @@ import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.Either
-import Data.Functor ((<&>))
 import Data.List (intersperse)
 import Data.String (fromString)
 import Data.Text (Text)
@@ -46,19 +45,12 @@ import Text.Pandoc (
 import Text.Pandoc.Definition (Pandoc)
 import Text.Pandoc.Walk
 import Web.Scotty.Trans
-import Web.Scotty.Internal.Types
 
 isDebug :: IO Bool
-isDebug =
-  lookupEnv "DEBUG" <&> \case
-    Just "1" -> True
-    _ -> False
+isDebug = (Just "1" ==) <$> lookupEnv "DEBUG"
 
 isHxRequest :: (MonadIO m) => ActionM m Bool
-isHxRequest =
-  header "hx-request" <&> \case
-    Just "true" -> True
-    _ -> False
+isHxRequest = (Just "true" ==) <$> header "hx-request"
 
 formatLink :: (Monad m) => Inline -> m Inline
 formatLink (Link (id_, cls, attrs) content target) = do
@@ -149,33 +141,32 @@ postHtml :: Post -> Html
 postHtml p = H.article
   H.! [classQQ|
               prose
-              prose-h1:mb-1
-              prose-h1:no-underline
               |]
   $ do
-    H.header $ do
-      let pid = show $ postId p
-      H.a
-        H.! A.id (fromString $ "posts:" <> pid)
-        H.! hx Get (fromString $ "/posts/" <> pid)
-        H.! hx PushUrl "true"
-        H.! hx Target "#posts"
-        $ do
-          H.h1 $ H.toHtml (postTitle p)
-      H.div H.! [classQQ| mt-0 mb-1 text-sm |] $ do
-        "Created: "
-        timeEl (postCreated p)
-        " (Updated: "
-        timeEl (postUpdated p)
-        ")"
-      H.div H.! [classQQ| my-0 flex gap-2 |] $ do
-        forM_ (postTags p) $ \t -> do
-          H.button
-            H.! [classQQ| badge badge-neutral |]
-            H.! hx Target "#posts"
-            H.! hx Get (fromString . T.unpack $ "/posts/tags/" <> t)
-            H.! hx PushUrl "true"
-            $ H.toHtml t
+    let pid = show $ postId p
+        postUrl = fromString $ "/posts/" <> pid
+    H.a
+      H.! A.id (fromString $ "posts:" <> pid)
+      H.! A.href postUrl
+      H.! hx Get postUrl
+      H.! hx PushUrl "true"
+      H.! hx Target "#posts"
+      $ do
+        H.h1 $ H.toHtml (postTitle p)
+    H.div H.! [classQQ| mt-0 mb-1 text-sm |] $ do
+      "Created: "
+      timeEl (postCreated p)
+      " (Updated: "
+      timeEl (postUpdated p)
+      ")"
+    H.div H.! [classQQ| my-0 flex gap-2 |] $ do
+      forM_ (postTags p) $ \t -> do
+        H.button
+          H.! [classQQ| badge badge-neutral |]
+          H.! hx Target "#posts"
+          H.! hx Get (fromString . T.unpack $ "/posts/tags/" <> t)
+          H.! hx PushUrl "true"
+          $ H.toHtml t
     mdToHtml (walkM formatLink) $ postBody p
 
 divider :: Html

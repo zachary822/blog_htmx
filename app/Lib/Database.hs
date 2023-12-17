@@ -7,6 +7,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Retry
+import Data.Bifunctor
 import Data.Maybe
 import Data.Pool
 import Data.Text (Text)
@@ -26,9 +27,9 @@ getDbInfo uri = fromJust $ do
 
   uriAuth <- uriAuthority parsed
 
-  let (uname, pw) = T.breakOn ":" . T.pack $ uriUserInfo uriAuth
+  let (uname, pw) = second (T.tail . T.init) $ T.breakOn ":" . T.pack $ uriUserInfo uriAuth
 
-  return (uriRegName uriAuth, uname, T.tail . T.init $ pw)
+  return (uriRegName uriAuth, uname, pw)
 
 getPipe :: ReplicaSet -> Username -> Password -> IO Pipe
 getPipe rs uname passwd = do
