@@ -42,7 +42,7 @@ runDb dbname q = do
 
   logger <- lift $ katipAddNamespace "runDb" askLoggerIO
 
-  liftAndCatchIO
+  liftIO
     $ recovering
       limitedBackoff
       [ logRetries

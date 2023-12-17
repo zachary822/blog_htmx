@@ -33,6 +33,7 @@ import Lib.Utils
 import Network.HTTP.Types
 import Network.Wai.Handler.Warp
 import Network.Wai.Middleware.RequestLogger
+import Network.Wai.Middleware.Rewrite
 import System.Environment
 import System.IO
 import Text.Blaze.Html5 qualified as H
@@ -111,7 +112,7 @@ main = do
           then logRequestDev
           else logRequest
 
-      middleware rewriteHtmxPostsMiddleware
+      middleware $ rewriteWithQueries rewriteHtmxPosts
 
       get "/healthcheck" $ do
         ver <- runDb "blog" serverVersion
@@ -134,7 +135,10 @@ main = do
 
         let docs = M.at "data" result
 
-        when (null docs) $ raiseStatus status404 "no posts"
+        when (null docs) $ do
+          status status404
+          text "no posts"
+          finish
 
         let total = getTotal result
             curr = getCurrentPage page
@@ -166,7 +170,10 @@ main = do
           ( find (select (getPost pid) "posts") >>= M.rest
           )
           >>= \case
-            [] -> raiseStatus status404 "Not Found"
+            [] -> do
+              status status404
+              text "no posts"
+              finish
             doc : _ -> blazeHtml $ do
               postHtml $ fromDocument doc
 
@@ -216,7 +223,10 @@ main = do
 
       get "/posts/tags/:tag" $ do
         tag :: Text <- captureParam "tag"
-        when (T.null tag) $ raiseStatus status404 "empty tag"
+        when (T.null tag) $ do
+          status status404
+          text "empty"
+          finish
 
         page <- getPage
 
@@ -234,7 +244,10 @@ main = do
               )
         let docs = M.at "data" result
 
-        when (null docs) $ raiseStatus status404 "no posts"
+        when (null docs) $ do
+          status status404
+          text "no posts"
+          finish
 
         let total = getTotal result
             curr = getCurrentPage page
@@ -288,7 +301,10 @@ main = do
 
         let docs = M.at "data" result
 
-        when (null docs) $ raiseStatus status404 "no posts"
+        when (null docs) $ do
+          status status404
+          text "no posts"
+          finish
 
         let total = getTotal result
             curr = getCurrentPage page

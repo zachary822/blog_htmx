@@ -46,6 +46,7 @@ import Text.Pandoc (
 import Text.Pandoc.Definition (Pandoc)
 import Text.Pandoc.Walk
 import Web.Scotty.Trans
+import Web.Scotty.Internal.Types
 
 isDebug :: IO Bool
 isDebug =
@@ -115,13 +116,13 @@ scottySocketT' mpath opts pool app = case mpath of
       listen sock maxListenQueue
       scottySocketT opts sock pool app
 
-returnDefault :: a -> StatusError -> ActionM IO a
+returnDefault :: a -> ScottyException -> ActionM IO a
 returnDefault a = const (return a)
 
 getPage :: ActionM IO Page
 getPage = do
-  pageLimit <- queryParam "limit" `rescue` returnDefault 10
-  pageOffset <- queryParam "offset" `rescue` returnDefault 0
+  pageLimit <- queryParam "limit" `catch` returnDefault 10
+  pageOffset <- queryParam "offset" `catch` returnDefault 0
 
   return Page{..}
 

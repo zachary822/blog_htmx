@@ -55,9 +55,3 @@ rewriteHtmxPosts p@(ps, qs) h = do
     >>= \case
       Nothing -> return p
       Just p' -> return p'
-
--- scotty bug?
-rewriteHtmxPostsMiddleware :: Middleware
-rewriteHtmxPostsMiddleware app req sendResponse = do
-  req' <- rewriteRequest rewriteHtmxPosts req
-  app req'{rawQueryString = renderQuery True $ queryString req'} sendResponse

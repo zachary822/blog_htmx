@@ -2,4 +2,8 @@ packages: .
 
 source-repository-package
     type: git
-    location: https://github.com/mongodb-haskell/mongodb.git          
+    location: https://github.com/mongodb-haskell/mongodb.git
+
+source-repository-package
+    type: git
+    location: https://github.com/zachary822/scotty.git
