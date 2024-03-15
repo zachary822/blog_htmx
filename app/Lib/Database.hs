@@ -51,17 +51,16 @@ runDb dbname q = do
           (\a b c -> logger WarningS $ logStr (defaultLogMsg a b c))
       ]
     $ const
-    $ do
-      withResource pool $ \p ->
-        access p master dbname q
+    $ withResource pool
+    $ \p -> access p master dbname q
 
 -- pipelines
 postsPipeline' :: (Val v0, Val v1) => v0 -> v1 -> [Document]
 postsPipeline' limit offset =
   [ ["$match" =: ["published" =: True]]
   , ["$sort" =: ["updated" =: (-1 :: Int)]]
-  , ["$limit" =: limit]
   , ["$skip" =: offset]
+  , ["$limit" =: limit]
   , ["$project" =: ["published" =: (0 :: Int)]]
   ]
 
@@ -102,8 +101,8 @@ postsSearchPipeline q limit offset =
            ]
     ]
   , ["$match" =: ["published" =: True]]
-  , ["$limit" =: limit]
   , ["$skip" =: offset]
+  , ["$limit" =: limit]
   , ["$project" =: ["published" =: (0 :: Int)]]
   ]
 
@@ -119,8 +118,8 @@ postsTagPipline tag limit offset =
                          ]
                    ]
                  , ["$sort" =: ["updated" =: (-1 :: Int)]]
-                 , ["$limit" =: limit]
                  , ["$skip" =: offset]
+                 , ["$limit" =: limit]
                  , ["$project" =: ["published" =: (0 :: Int)]]
                  ]
            , "total"
@@ -142,7 +141,8 @@ postsTagPipline tag limit offset =
     ]
   ]
 
-postsMonthPipline :: (Val v0, Val v1, Val v2, Val v3) => v0 -> v1 -> v2 -> v3 -> [Document]
+postsMonthPipline ::
+  (Val v0, Val v1, Val v2, Val v3) => v0 -> v1 -> v2 -> v3 -> [Document]
 postsMonthPipline year month limit offset =
   [
     [ "$facet"
@@ -160,8 +160,8 @@ postsMonthPipline year month limit offset =
                    ]
                  , ["$match" =: ["year" =: year, "month" =: month]]
                  , ["$sort" =: ["updated" =: (-1 :: Int)]]
-                 , ["$limit" =: limit]
                  , ["$skip" =: offset]
+                 , ["$limit" =: limit]
                  ,
                    [ "$project"
                       =: [ "published" =: (0 :: Int)
@@ -218,7 +218,10 @@ summaryPipeline =
                          , "count" =: (1 :: Int)
                          ]
                    ]
-                 , ["$sort" =: ["year" =: (-1 :: Int), "month" =: (-1 :: Int), "count" =: (-1 :: Int)]]
+                 ,
+                   [ "$sort"
+                      =: ["year" =: (-1 :: Int), "month" =: (-1 :: Int), "count" =: (-1 :: Int)]
+                   ]
                  ]
            , "tags"
               =: [ ["$match" =: ["published" =: True]]

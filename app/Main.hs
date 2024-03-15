@@ -11,19 +11,22 @@ import Configuration.Dotenv (defaultConfig, loadFile, onMissingFile)
 import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.Reader
+import Data.ByteString.Builder qualified as B
+import Data.ByteString.Lazy qualified as BL
 import Data.Default (def)
 import Data.Pool
 import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Time.Calendar.Month
 import Database.MongoDB hiding (Oid, next)
 import Database.MongoDB qualified as M
-import GHC.IO (unsafePerformIO)
 import Katip
 import Katip.Monadic (askLoggerIO)
 import Lib.Blaze
+import Lib.Components
 import Lib.Database
 import Lib.Middleware
 import Lib.Rss
@@ -92,19 +95,18 @@ main = do
     logger <- f askLoggerIO
 
     let destination = Callback $ logger InfoS . logStr . FLogStr
-        logRequest =
-          unsafePerformIO $
-            mkRequestLogger
-              def
-                { outputFormat = Apache FromSocket
-                , destination = destination
-                }
-        logRequestDev =
-          unsafePerformIO $
-            mkRequestLogger
-              def
-                { destination = destination
-                }
+
+    logRequest <-
+      mkRequestLogger
+        def
+          { outputFormat = Apache FromSocket
+          , destination = destination
+          }
+    logRequestDev <-
+      mkRequestLogger
+        def
+          { destination = destination
+          }
 
     scottySocketT' socketPath opts f $ do
       middleware $
@@ -132,7 +134,6 @@ main = do
                       (pageOffset page)
                   )
               )
-
         let docs = M.at "data" result
 
         when (null docs) $ do
@@ -147,20 +148,19 @@ main = do
         blazeHtml $ do
           renderPosts docs
           when (maxPage > 1) $
-            H.div H.! [classQQ| join |] $
-              forM_ [1 .. maxPage] $ \case
-                x
-                  | x == curr ->
-                      H.button
-                        H.! A.class_ "join-item btn btn-active"
-                        $ H.toHtml (show curr)
-                o ->
-                  H.button
-                    H.! A.class_ "join-item btn"
-                    H.! hx PushUrl "true"
-                    H.! hx Get (fromString $ "/posts/?offset=" <> show (pred o * pageLimit page))
-                    H.! hx Target "#posts"
-                    $ fromString (show o)
+            H.div H.! A.class_ "join" $
+              forM_ [1 .. maxPage] $ \o ->
+                pageButton
+                  (o == curr)
+                  ( T.concat
+                      [ "/posts/"
+                      , "?offset="
+                      , T.pack $ show (pred o * pageLimit page)
+                      , "&limit="
+                      , T.pack $ show (pageLimit page)
+                      ]
+                  )
+                  o
 
       get "/posts/:pid" $ do
         Oid pid <- captureParam "pid"
@@ -258,29 +258,20 @@ main = do
         blazeHtml $ do
           renderPosts docs
           when (maxPage > 1) $
-            H.div H.! [classQQ| join |] $
-              forM_ [1 .. maxPage] $ \case
-                x
-                  | x == curr ->
-                      H.button
-                        H.! A.class_ "join-item btn btn-active"
-                        $ H.toHtml (show curr)
-                o ->
-                  H.button
-                    H.! A.class_ "join-item btn"
-                    H.! hx
-                      Get
-                      ( fromString . T.unpack $
-                          T.concat
-                            [ "/posts/tags/"
-                            , tag
-                            , "?offset="
-                            , T.pack $ show (pred o * pageLimit page)
-                            ]
-                      )
-                    H.! hx PushUrl "true"
-                    H.! hx Target "#posts"
-                    $ fromString (show o)
+            H.div H.! A.class_ "join" $
+              forM_ [1 .. maxPage] $ \o ->
+                pageButton
+                  (o == curr)
+                  ( T.concat
+                      [ "/posts/tags/"
+                      , tag
+                      , "?offset="
+                      , T.pack $ show (pred o * pageLimit page)
+                      , "&limit="
+                      , T.pack $ show (pageLimit page)
+                      ]
+                  )
+                  o
 
       get "/posts/months/:year/:month" $ do
         year :: Int <- captureParam "year"
@@ -315,31 +306,22 @@ main = do
         blazeHtml $ do
           renderPosts docs
           when (maxPage > 1) $
-            H.div H.! [classQQ| join |] $
-              forM_ [1 .. maxPage] $ \case
-                x
-                  | x == curr ->
-                      H.button
-                        H.! A.class_ "join-item btn btn-active"
-                        $ H.toHtml (show curr)
-                o ->
-                  H.button
-                    H.! A.class_ "join-item btn"
-                    H.! hx
-                      Get
-                      ( fromString . T.unpack $
-                          T.concat
-                            [ "/posts/months/"
-                            , T.pack $ show year
-                            , "/"
-                            , T.pack $ show month
-                            , "?offset="
-                            , T.pack $ show (pred o * pageLimit page)
-                            ]
-                      )
-                    H.! hx PushUrl "true"
-                    H.! hx Target "#posts"
-                    $ fromString (show o)
+            H.div H.! A.class_ "join" $
+              forM_ [1 .. maxPage] $ \o ->
+                pageButton
+                  (o == curr)
+                  ( T.concat
+                      [ "/posts/months/"
+                      , T.pack $ show year
+                      , "/"
+                      , T.pack $ show month
+                      , "?offset="
+                      , (T.pack . show) (pred o * pageLimit page)
+                      , "&limit="
+                      , (T.pack . show) (pageLimit page)
+                      ]
+                  )
+                  o
 
       get "/posts/search" $ do
         page <- getPage

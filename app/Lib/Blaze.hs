@@ -1,27 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TemplateHaskellQuotes #-}
 
 module Lib.Blaze where
 
 import Control.Monad.IO.Class
 import Data.String
-import Language.Haskell.TH.Quote
 import Lib.Types
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 (Attribute, AttributeValue, Html)
 import Text.Blaze.Html5 qualified as H
-import Text.Blaze.Html5.Attributes qualified as A
 import Web.Scotty.Trans (raw, setHeader)
-
-classQQ :: QuasiQuoter
-classQQ =
-  QuasiQuoter
-    { quoteExp = \str -> [|A.class_ . fromString . unwords . words $ str|]
-    , quotePat = error "not supported"
-    , quoteDec = error "not supported"
-    , quoteType = error "not supported"
-    }
 
 blazeHtml :: (MonadIO m) => Html -> ActionM m ()
 blazeHtml h = do

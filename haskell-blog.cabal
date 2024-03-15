@@ -67,13 +67,14 @@ executable haskell-blog
                       Lib.Rss.Attributes,
                       Lib.Middleware,
                       Lib.Types,
-                      Lib.Utils
+                      Lib.Utils,
+                      Lib.Components
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.18.1.0,
+    build-depends:    base >=4.18.1.0 && <5,
                       bytestring,
                       scotty,
                       mongoDB,
@@ -101,7 +102,8 @@ executable haskell-blog
                       unliftio-core,
                       fast-logger,
                       string-conv,
-                      data-default
+                      data-default,
+                      shakespeare
 
     -- Directories containing source files.
     hs-source-dirs:   app
