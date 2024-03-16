@@ -1,9 +1,5 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module Main where
 
@@ -11,14 +7,11 @@ import Configuration.Dotenv (defaultConfig, loadFile, onMissingFile)
 import Control.Exception (bracket)
 import Control.Monad
 import Control.Monad.Reader
-import Data.ByteString.Builder qualified as B
-import Data.ByteString.Lazy qualified as BL
 import Data.Default (def)
 import Data.Pool
 import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.Encoding qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Time.Calendar.Month
 import Database.MongoDB hiding (Oid, next)
@@ -54,6 +47,7 @@ main = do
   webHost <- maybe "*" fromString <$> lookupEnv "HOST"
   webPort <- maybe 3000 read <$> lookupEnv "PORT"
   socketPath :: Maybe FilePath <- lookupEnv "SOCKET"
+
   -- logging
   sev :: Severity <- maybe InfoS read <$> lookupEnv "SEVERITY"
   logFile :: Maybe FilePath <- lookupEnv "LOG_FILE"
@@ -124,7 +118,7 @@ main = do
         page <- getPage
 
         result <-
-          head
+          join
             <$> runDb
               "blog"
               ( aggregate
@@ -179,7 +173,7 @@ main = do
 
       get "/posts/summary" $ do
         result <-
-          head
+          join
             <$> runDb
               "blog"
               ( aggregate
@@ -233,7 +227,7 @@ main = do
         page <- getPage
 
         result <-
-          head
+          join
             <$> runDb
               "blog"
               ( aggregate
@@ -279,7 +273,7 @@ main = do
         page <- getPage
 
         result <-
-          head
+          join
             <$> runDb
               "blog"
               ( aggregate

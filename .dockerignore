@@ -2,3 +2,8 @@
 dist-newstyle/
 node_modules/
 .env*
+.idea*
+.git/
+.github/
+*.tar.gz
+*.tgz
