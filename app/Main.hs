@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
@@ -161,8 +162,7 @@ main = do
 
         runDb
           "blog"
-          ( find (select (getPost pid) "posts") >>= M.rest
-          )
+          (find (select (getPost pid) "posts") >>= M.rest)
           >>= \case
             [] -> do
               status status404
@@ -204,8 +204,8 @@ main = do
           H.h2 "Tags"
           H.ul $
             forM_ (tags summary) $ \t -> do
+              let tagUrl = fromString . T.unpack $ "/posts/tags/" <> tagName t
               H.li $ do
-                let tagUrl = fromString . T.unpack $ "/posts/tags/" <> tagName t
                 H.a
                   H.! A.href tagUrl
                   H.! hx PushUrl "true"

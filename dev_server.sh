@@ -8,7 +8,8 @@ sigint_handler()
 
 trap sigint_handler SIGINT
 
-while true; do
+while true;
+do
   $@ &
   PID=$!
   fswatch -1 app/ *.cabal
